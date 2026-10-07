@@ -1,0 +1,13 @@
+default_config:
+
+homeassistant:
+  name: Einkaufsliste Test
+  language: de
+  country: AT
+  time_zone: Europe/Vienna
+  unit_system: metric
+
+logger:
+  default: warning
+  logs:
+    custom_components.einkaufsliste: debug

@@ -1,0 +1,85 @@
+add_item:
+  target:
+    entity:
+      integration: einkaufsliste
+      domain: todo
+  fields:
+    name:
+      required: true
+      example: "Mehl"
+      selector:
+        text:
+    quantity:
+      example: 2
+      selector:
+        number:
+          min: 0
+          max: 100000
+          step: any
+          mode: box
+    unit:
+      selector:
+        select:
+          translation_key: unit
+          options: [stk, pkg, dose, flasche, bund, g, kg, ml, l]
+    note:
+      selector:
+        text:
+
+update_item:
+  target:
+    entity:
+      integration: einkaufsliste
+      domain: todo
+  fields:
+    item:
+      required: true
+      example: "Mehl"
+      selector:
+        text:
+    rename:
+      selector:
+        text:
+    quantity:
+      selector:
+        number:
+          min: 0
+          max: 100000
+          step: any
+          mode: box
+    unit:
+      selector:
+        select:
+          translation_key: unit
+          options: [stk, pkg, dose, flasche, bund, g, kg, ml, l]
+    note:
+      selector:
+        text:
+
+check_item:
+  target:
+    entity:
+      integration: einkaufsliste
+      domain: todo
+  fields:
+    item:
+      required: true
+      example: "Mehl"
+      selector:
+        text:
+    checked:
+      default: true
+      selector:
+        boolean:
+
+remove_item:
+  target:
+    entity:
+      integration: einkaufsliste
+      domain: todo
+  fields:
+    item:
+      required: true
+      example: "Mehl"
+      selector:
+        text:

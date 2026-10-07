@@ -1,0 +1,104 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Neue Einkaufsliste",
+        "data": {
+          "name": "Name der Liste"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Eine Liste mit diesem Namen gibt es schon."
+    }
+  },
+  "selector": {
+    "unit": {
+      "options": {
+        "stk": "Stück (Stk.)",
+        "pkg": "Packung (Pkg.)",
+        "dose": "Dose",
+        "flasche": "Flasche (Fl.)",
+        "bund": "Bund",
+        "g": "Gramm (g)",
+        "kg": "Kilogramm (kg)",
+        "ml": "Milliliter (ml)",
+        "l": "Liter (l)"
+      }
+    }
+  },
+  "services": {
+    "add_item": {
+      "name": "Artikel hinzufügen",
+      "description": "Fügt einen Artikel hinzu. Steht er schon auf der Liste, wird die Menge addiert.",
+      "fields": {
+        "name": {
+          "name": "Name",
+          "description": "Artikelname, z. B. \"Mehl\" oder \"2 kg Mehl\"."
+        },
+        "quantity": {
+          "name": "Menge",
+          "description": "Menge als Zahl."
+        },
+        "unit": {
+          "name": "Einheit",
+          "description": "Stück, Gewicht oder Volumen."
+        },
+        "note": {
+          "name": "Notiz",
+          "description": "Zusätzliche Info, z. B. Marke."
+        }
+      }
+    },
+    "update_item": {
+      "name": "Artikel ändern",
+      "description": "Ändert Menge, Einheit, Name oder Notiz eines Artikels.",
+      "fields": {
+        "item": {
+          "name": "Artikel",
+          "description": "Name oder ID des Artikels."
+        },
+        "rename": {
+          "name": "Neuer Name",
+          "description": "Neuer Artikelname."
+        },
+        "quantity": {
+          "name": "Menge",
+          "description": "Neue Menge."
+        },
+        "unit": {
+          "name": "Einheit",
+          "description": "Neue Einheit."
+        },
+        "note": {
+          "name": "Notiz",
+          "description": "Neue Notiz."
+        }
+      }
+    },
+    "check_item": {
+      "name": "Artikel abhaken",
+      "description": "Hakt einen Artikel ab (oder wieder auf).",
+      "fields": {
+        "item": {
+          "name": "Artikel",
+          "description": "Name oder ID des Artikels."
+        },
+        "checked": {
+          "name": "Abgehakt",
+          "description": "Aus = wieder offen."
+        }
+      }
+    },
+    "remove_item": {
+      "name": "Artikel entfernen",
+      "description": "Löscht einen Artikel von der Liste.",
+      "fields": {
+        "item": {
+          "name": "Artikel",
+          "description": "Name oder ID des Artikels."
+        }
+      }
+    }
+  }
+}

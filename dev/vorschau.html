@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Einkaufsliste – Vorschau</title>
+<style>
+  :root {
+    --primary-color: #03a9f4;
+    --text-primary-color: #fff;
+    --primary-text-color: #212121;
+    --secondary-text-color: #727272;
+    --disabled-text-color: #bdbdbd;
+    --divider-color: rgba(0, 0, 0, 0.12);
+    --card-background-color: #fff;
+    --secondary-background-color: #f2f2f2;
+    --primary-background-color: #fafafa;
+    --error-color: #db4437;
+  }
+  body.dark {
+    --primary-text-color: #e1e1e1;
+    --secondary-text-color: #9b9b9b;
+    --disabled-text-color: #6f6f6f;
+    --divider-color: rgba(225, 225, 225, 0.12);
+    --card-background-color: #1c1c1c;
+    --secondary-background-color: #282828;
+    --primary-background-color: #111;
+  }
+  body {
+    margin: 0; padding: 16px; font-family: Roboto, "Segoe UI", system-ui, sans-serif;
+    background: var(--primary-background-color); color: var(--primary-text-color);
+  }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; max-width: 1100px; margin: 0 auto 16px; }
+  .toolbar h1 { font-size: 1.1em; font-weight: 500; margin: 0 auto 0 0; }
+  .toolbar button {
+    font: inherit; padding: 6px 12px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--divider-color); background: var(--card-background-color); color: var(--primary-text-color);
+  }
+  .layout { display: grid; grid-template-columns: minmax(0, 420px) minmax(0, 1fr); gap: 16px; max-width: 1100px; margin: 0 auto; }
+  @media (max-width: 800px) { .layout { grid-template-columns: 1fr; } }
+  .panel { background: var(--card-background-color); border-radius: 12px; padding: 16px; box-shadow: 0 2px 2px rgba(0,0,0,.14), 0 1px 5px rgba(0,0,0,.12); overflow-x: auto; }
+  .panel h2 { font-size: 1em; font-weight: 500; margin: 0 0 8px; }
+  .hint { color: var(--secondary-text-color); font-size: 0.85em; margin: 0 0 8px; }
+  table { border-collapse: collapse; font-size: 0.8em; width: 100%; }
+  th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--divider-color); white-space: nowrap; }
+  th { color: var(--secondary-text-color); font-weight: 500; }
+  td.null { color: var(--disabled-text-color); font-style: italic; }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <h1>Einkaufsliste – Vorschau ohne Home Assistant</h1>
+    <button id="dark">Dunkles Design</button>
+    <button id="reset">Beispieldaten zurücksetzen</button>
+  </div>
+  <div class="layout">
+    <div id="card-slot"></div>
+    <div class="panel">
+      <h2>Tabelle <code>artikel</code> (so landet es in der SQLite-Datenbank)</h2>
+      <p class="hint">Die Vorschau simuliert Home Assistant im Browser. Die Daten bleiben nur in diesem Browser gespeichert.</p>
+      <div id="table"></div>
+    </div>
+  </div>
+
+<!-- Ersatz für die HA-Elemente ha-card und ha-icon -->
+<script>
+  const ICONS = {
+    "mdi:plus": "+", "mdi:pencil": "✎", "mdi:close": "✕",
+    "mdi:chevron-down": "▾", "mdi:chevron-up": "▴", "mdi:cart-check": "✓",
+  };
+  customElements.define("ha-icon", class extends HTMLElement {
+    static get observedAttributes() { return ["icon"]; }
+    attributeChangedCallback() { this.textContent = ICONS[this.getAttribute("icon")] ?? ""; }
+    connectedCallback() { this.style.cssText = "display:inline-flex;font-size:18px;line-height:1"; this.attributeChangedCallback(); }
+  });
+  customElements.define("ha-card", class extends HTMLElement {
+    constructor() {
+      super();
+      this.attachShadow({ mode: "open" }).innerHTML = `<style>:host{display:block;background:var(--card-background-color);
+        border-radius:12px;box-shadow:0 2px 2px rgba(0,0,0,.14),0 1px 5px rgba(0,0,0,.12);color:var(--primary-text-color)}</style><slot></slot>`;
+    }
+  });
+</script>
+
+<!-- Die echte Karte -->
+<script src="../einkaufsliste/integration/einkaufsliste/www/einkaufsliste-card.js"></script>
+
+<!-- Simuliertes Backend (bildet store.py / parsing.py nach) -->
+<script>
+  const STORAGE_KEY = "einkaufsliste-vorschau-v2";
+  const UNIT_ALIASES = {
+    stk: ["stk", "stk.", "stück", "stueck", "st.", "x"],
+    pkg: ["pkg", "pkg.", "pck", "pck.", "packung", "packungen", "pack", "päckchen"],
+    dose: ["dose", "dosen"],
+    flasche: ["flasche", "flaschen", "fl", "fl."],
+    bund: ["bund", "bd.", "bd"],
+    g: ["g", "gr", "gr.", "gramm"],
+    kg: ["kg", "kilo", "kilogramm"],
+    ml: ["ml", "milliliter"],
+    l: ["l", "liter", "ltr", "ltr."],
+  };
+  const CONVERSION = { g: ["g", 1], kg: ["g", 1000], ml: ["ml", 1], l: ["ml", 1000] };
+  const ALIAS_TO_UNIT = Object.fromEntries(Object.entries(UNIT_ALIASES).flatMap(([u, as]) => as.map((a) => [a, u])));
+  const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const UNIT_RE = Object.keys(ALIAS_TO_UNIT).sort((a, b) => b.length - a.length).map(reEsc).join("|");
+  const NUM = String.raw`\d+(?:[.,]\d+)?`;
+  const PATTERNS = [
+    new RegExp(String.raw`^\s*(?<name>.+?)\s*\(\s*(?<qty>${NUM})\s*(?:(?<unit>${UNIT_RE}))?\s*\)\s*$`, "iu"),
+    new RegExp(String.raw`^\s*(?<qty>${NUM})\s*(?:(?<unit>${UNIT_RE})(?=[\s)]|$)\s*|\s+)(?<name>.+?)\s*$`, "iu"),
+    new RegExp(String.raw`^\s*(?<name>.+?)\s*[-–:,]?\s*(?<qty>${NUM})\s*(?<unit>${UNIT_RE})\s*$`, "iu"),
+  ];
+  const cleanName = (n) => { n = n.trim(); return n.charAt(0).toUpperCase() + n.slice(1); };
+
+  function parseItem(text) {
+    for (const re of PATTERNS) {
+      const m = text.trim().match(re);
+      if (m) {
+        const unit = m.groups.unit;
+        return [cleanName(m.groups.name), parseFloat(m.groups.qty.replace(",", ".")), unit ? ALIAS_TO_UNIT[unit.toLowerCase()] : "stk"];
+      }
+    }
+    return [cleanName(text), null, null];
+  }
+
+  const round3 = (n) => Math.round(n * 1000) / 1000;
+  function mergeQuantities(q1, u1, q2, u2) {
+    if (q2 == null) return [q1, u1];
+    if (q1 == null) return [q2, u2];
+    if (u1 === u2) return [round3(q1 + q2), u1];
+    const c1 = CONVERSION[u1], c2 = CONVERSION[u2];
+    if (c1 && c2 && c1[0] === c2[0]) {
+      const total = q1 * c1[1] + q2 * c2[1];
+      return total >= 1000 ? [round3(total / 1000), c1[0] === "g" ? "kg" : "l"] : [round3(total), c1[0]];
+    }
+    return null;
+  }
+
+  const now = () => new Date().toISOString();
+  const uid = () => crypto.randomUUID().replaceAll("-", "");
+  const emptyToNull = (v) => (v == null || String(v).trim() === "" ? null : String(v).trim());
+
+  function sampleData() {
+    const mk = (name, quantity, unit, extra = {}) =>
+      ({ id: uid(), name, quantity, unit, note: null, checked: false, created: now(), checked_at: null, ...extra });
+    const items = [
+      mk("Äpfel", 6, "stk"),
+      mk("Bananen", 1, "bund"),
+      mk("Milch", 2, "l", { note: "3,5 % Fett" }),
+      mk("Gouda", 250, "g"),
+      mk("Mehl", 1, "kg"),
+      mk("Mineralwasser", 6, "flasche"),
+      mk("Zahnpasta", null, null),
+      mk("Brot", 1, "stk", { checked: true, checked_at: now() }),
+    ];
+    const history = {};
+    for (const i of items) history[i.name.toLowerCase()] = { name: i.name, unit: i.unit, count: 1 };
+    return { items, history };
+  }
+
+  function loadData() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (_e) { /* ohne Speicher weiter */ }
+    return sampleData();
+  }
+
+  let data = loadData();
+  const listeners = new Set();
+
+  function changed() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch (_e) { /* egal */ }
+    const snapshot = structuredClone({
+      items: data.items,
+      history: Object.values(data.history).sort((a, b) => b.count - a.count),
+    });
+    listeners.forEach((cb) => cb(snapshot));
+    renderTable();
+  }
+
+  function remember(item, count = false) {
+    const key = item.name.toLowerCase();
+    const e = (data.history[key] ??= { name: item.name, count: 0 });
+    e.name = item.name;
+    if (item.unit) e.unit = item.unit;
+    if (count) e.count++;
+  }
+
+  const findByName = (name) => {
+    const m = data.items.filter((i) => i.name.toLowerCase() === name.toLowerCase());
+    return m.find((i) => !i.checked) ?? m[0] ?? null;
+  };
+  const getItem = (id) => {
+    const item = data.items.find((i) => i.id === id);
+    if (!item) throw { code: "not_found", message: "Artikel nicht gefunden" };
+    return item;
+  };
+
+  const backend = {
+    add({ name, quantity = null, unit = null, note = null }) {
+      name = name.trim();
+      if (quantity == null) { let pu; [name, quantity, pu] = parseItem(name); unit = unit || pu; }
+      if (!name) throw { code: "invalid_format", message: "Der Artikelname darf nicht leer sein" };
+      const known = data.history[name.toLowerCase()] ?? {};
+      if (quantity != null && unit == null) unit = known.unit ?? "stk";
+      if (quantity == null) unit = null;
+      note = emptyToNull(note);
+      const existing = findByName(name);
+      if (existing) {
+        if (existing.checked) {
+          Object.assign(existing, { checked: false, checked_at: null, quantity, unit, note });
+          remember(existing, true); changed(); return existing;
+        }
+        const merged = mergeQuantities(existing.quantity, existing.unit, quantity, unit);
+        if (merged) {
+          [existing.quantity, existing.unit] = merged;
+          existing.note = note ?? existing.note;
+          remember(existing, true); changed(); return existing;
+        }
+      }
+      const item = { id: uid(), name, quantity, unit, note, checked: false, created: now(), checked_at: null };
+      data.items.push(item);
+      remember(item, true); changed(); return item;
+    },
+    update({ item_id, ...changes }) {
+      const item = getItem(item_id);
+      for (const [key, value] of Object.entries(changes)) {
+        if (key === "name") {
+          if (!value.trim()) throw { code: "invalid_format", message: "Der Artikelname darf nicht leer sein" };
+          item.name = value.trim();
+        } else if (key === "note") item.note = emptyToNull(value);
+        else if (key === "checked") {
+          if (value !== item.checked) item.checked_at = value ? now() : null;
+          item.checked = !!value;
+        } else if (key === "quantity" || key === "unit") item[key] = value;
+      }
+      if (item.quantity == null) item.unit = null;
+      else if (item.unit == null) item.unit = "stk";
+      remember(item); changed(); return item;
+    },
+    remove({ item_ids }) { item_ids.forEach(getItem); data.items = data.items.filter((i) => !item_ids.includes(i.id)); changed(); return null; },
+    clear_checked() { const n = data.items.length; data.items = data.items.filter((i) => !i.checked); changed(); return n - data.items.length; },
+  };
+
+  const hass = {
+    language: "de",
+    states: { "todo.einkaufsliste": { state: "0", attributes: { friendly_name: "Einkaufsliste", list_id: "vorschau" } } },
+    connection: {
+      subscribeMessage(cb) {
+        listeners.add(cb);
+        setTimeout(changed, 0);
+        return Promise.resolve(() => listeners.delete(cb));
+      },
+    },
+    async callWS(msg) {
+      await new Promise((r) => setTimeout(r, 80)); // kleine Netzwerk-Verzögerung simulieren
+      const command = msg.type.replace("einkaufsliste/", "");
+      if (!backend[command]) throw { code: "unknown_command", message: `Unbekannter Befehl ${msg.type}` };
+      return structuredClone(backend[command](msg));
+    },
+  };
+
+  // ------------------------------------------------------------ Tabelle
+  const COLUMNS = [["position", null], ["name", "name"], ["menge", "quantity"], ["einheit", "unit"],
+    ["notiz", "note"], ["erledigt", "checked"], ["erledigt_am", "checked_at"]];
+  const escHtml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  function renderTable() {
+    const rows = data.items.map((item, pos) => "<tr>" + COLUMNS.map(([col, field]) => {
+      let v = field === null ? pos : item[field];
+      if (field === "checked") v = v ? 1 : 0;
+      if (field === "checked_at" && v) v = v.slice(0, 19).replace("T", " ");
+      return v == null ? `<td class="null">NULL</td>` : `<td>${escHtml(v)}</td>`;
+    }).join("") + "</tr>").join("");
+    document.getElementById("table").innerHTML =
+      `<table><thead><tr>${COLUMNS.map(([c]) => `<th>${c}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
+  // ------------------------------------------------------------ Karte einsetzen
+  const card = document.createElement("einkaufsliste-card");
+  card.setConfig({ type: "custom:einkaufsliste-card", entity: "todo.einkaufsliste" });
+  document.getElementById("card-slot").appendChild(card);
+  card.hass = hass;
+
+  document.getElementById("dark").addEventListener("click", () => document.body.classList.toggle("dark"));
+  document.getElementById("reset").addEventListener("click", () => { data = sampleData(); changed(); });
+</script>
+</body>
+</html>

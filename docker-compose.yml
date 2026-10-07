@@ -1,0 +1,18 @@
+# Lokale Test-Instanz von Home Assistant
+#   Starten:   docker compose up -d
+#   Logs:      docker compose logs -f
+#   Neustart:  docker compose restart   (nach Änderungen am Python-Code)
+#   Stoppen:   docker compose down
+# Danach im Browser: http://localhost:8123
+services:
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    container_name: einkaufsliste-ha
+    ports:
+      - "8123:8123"
+    environment:
+      - TZ=Europe/Vienna
+    volumes:
+      - ./dev-config:/config
+      - ./einkaufsliste/integration/einkaufsliste:/config/custom_components/einkaufsliste
+    restart: unless-stopped

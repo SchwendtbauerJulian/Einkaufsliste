@@ -1,0 +1,132 @@
+:root {
+  --primary: #03a9f4;
+  --on-primary: #fff;
+  --header-bg: #03a9f4;
+  --header-text: #fff;
+  --text: #212121;
+  --text-2: #727272;
+  --text-off: #bdbdbd;
+  --bg: #fafafa;
+  --surface: #ffffff;
+  --field: #f2f2f2;
+  --divider: rgba(0, 0, 0, 0.12);
+  --danger: #db4437;
+  --ok: #43a047;
+  --warn: #ffa600;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --primary: #03a9f4;
+    --on-primary: #fff;
+    --header-bg: #101e24;
+    --header-text: #e1e1e1;
+    --text: #e1e1e1;
+    --text-2: #9b9b9b;
+    --text-off: #6f6f6f;
+    --bg: #111111;
+    --surface: #1c1c1c;
+    --field: #2a2a2a;
+    --divider: rgba(225, 225, 225, 0.12);
+    --danger: #ef5350;
+    --ok: #66bb6a;
+    --warn: #ffa600;
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0;
+  font: 16px/1.4 Roboto, system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+}
+
+header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 8px 12px 16px; background: var(--header-bg); color: var(--header-text);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  position: sticky; top: 0; z-index: 2;
+}
+header h1 { font-size: 1.25em; font-weight: 400; margin: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+main, #settings { max-width: 640px; margin: 0 auto; padding: 12px 16px 32px; }
+
+input, select, textarea {
+  font: inherit; color: var(--text); background: var(--field);
+  border: 1px solid var(--divider); border-radius: 10px;
+  padding: 10px 12px; min-width: 0; width: 100%;
+}
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--primary); outline-offset: -1px; }
+textarea { font-family: ui-monospace, monospace; font-size: 0.8em; resize: vertical; }
+
+button { font: inherit; cursor: pointer; color: inherit; }
+button.primary {
+  background: var(--primary); color: var(--on-primary); border: none; border-radius: 10px;
+  font-size: 1.4em; line-height: 1;
+}
+button.primary.text { font-size: 1em; padding: 10px 18px; }
+button.link { background: none; border: none; color: var(--primary); padding: 8px 4px; }
+button.danger { color: var(--danger); }
+button.icon {
+  background: none; border: none; font-size: 1.3em; width: 40px; height: 40px;
+  border-radius: 50%; color: var(--text-2); flex: none;
+}
+header button.icon { color: var(--header-text); }
+
+.status {
+  border: none; border-radius: 999px; padding: 4px 10px; font-size: 0.8em;
+  background: rgba(255, 255, 255, 0.2); color: var(--header-text); white-space: nowrap;
+}
+.status::before { content: "●"; margin-right: 5px; }
+.status.ok::before { color: var(--ok); }
+.status.pending::before { color: var(--warn); }
+.status.error::before { color: var(--danger); }
+
+#add { display: grid; grid-template-columns: 1fr 76px 80px 48px; gap: 6px; margin-bottom: 12px; }
+#add .wide { grid-column: 1 / -1; }
+
+.item {
+  display: flex; align-items: center; gap: 8px; padding: 6px 0;
+  border-bottom: 1px solid var(--divider);
+}
+.item input[type="checkbox"] { width: 24px; height: 24px; flex: none; margin: 0 4px; accent-color: var(--primary); }
+.item .text { flex: 1; min-width: 0; padding: 6px 0; cursor: pointer; }
+.item .name { overflow-wrap: anywhere; }
+.item .note { color: var(--text-2); font-size: 0.85em; overflow-wrap: anywhere; }
+.item.checked .name { text-decoration: line-through; color: var(--text-off); }
+.qty { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.item.checked .qty { color: var(--text-off); }
+.stepper { display: flex; align-items: center; gap: 4px; flex: none; }
+.stepper .qty { min-width: 56px; text-align: center; }
+.stepper button {
+  width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--divider);
+  background: none; padding: 0; line-height: 1; font-size: 1.1em;
+}
+.stepper button:disabled { opacity: 0.3; cursor: default; }
+.item button.icon { font-size: 1.1em; width: 36px; height: 36px; }
+
+.empty { text-align: center; color: var(--text-2); padding: 32px 0; }
+.done-header { display: flex; justify-content: space-between; margin-top: 16px; }
+
+#settings h2, dialog h2 { font-size: 1.15em; margin: 0 0 12px; }
+#settings label, dialog label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85em; color: var(--text-2); margin: 12px 0; }
+#settings .steps { padding-left: 20px; color: var(--text-2); font-size: 0.9em; }
+#settings .steps b { color: var(--text); }
+.msg { min-height: 1.4em; font-size: 0.9em; }
+.msg.error { color: var(--danger); }
+.msg.ok { color: var(--ok); }
+.hint { color: var(--text-2); font-size: 0.85em; }
+.buttons { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+.spacer { flex: 1; }
+
+dialog {
+  border: none; border-radius: 16px; padding: 20px; width: min(92vw, 440px);
+  background: var(--surface); color: var(--text);
+}
+dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+dialog .row { display: flex; gap: 8px; }
+dialog .row label { flex: 1; }

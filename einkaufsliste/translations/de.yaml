@@ -1,0 +1,6 @@
+configuration:
+  auto_restart:
+    name: Home Assistant automatisch neu starten
+    description: >-
+      Nach der Installation oder einem Update der Integration Home Assistant automatisch
+      neu starten. Ist das ausgeschaltet, erscheint stattdessen eine Benachrichtigung.
