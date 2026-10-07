@@ -2,5 +2,6 @@ __pycache__/
 *.pyc
 dev/*.db
 dev/*.db-*
+dev/auth-dev.json
 dev-config/*
 !dev-config/configuration.yaml

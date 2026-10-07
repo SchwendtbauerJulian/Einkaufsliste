@@ -109,13 +109,15 @@ header button.icon { color: var(--header-text); }
 .stepper button:disabled { opacity: 0.3; cursor: default; }
 .item button.icon { font-size: 1.1em; width: 36px; height: 36px; }
 
+.banner {
+  display: flex; flex-direction: column; gap: 10px; align-items: flex-start;
+  background: var(--field); border-radius: 12px; padding: 14px; margin-bottom: 12px; color: var(--text-2);
+}
 .empty { text-align: center; color: var(--text-2); padding: 32px 0; }
 .done-header { display: flex; justify-content: space-between; margin-top: 16px; }
 
 #settings h2, dialog h2 { font-size: 1.15em; margin: 0 0 12px; }
 #settings label, dialog label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85em; color: var(--text-2); margin: 12px 0; }
-#settings .steps { padding-left: 20px; color: var(--text-2); font-size: 0.9em; }
-#settings .steps b { color: var(--text); }
 .msg { min-height: 1.4em; font-size: 0.9em; }
 .msg.error { color: var(--danger); }
 .msg.ok { color: var(--ok); }

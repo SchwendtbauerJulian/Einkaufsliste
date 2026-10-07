@@ -1,6 +1,6 @@
 /* Service Worker: hält die App-Dateien vor, damit die App auch ohne Verbindung startet. */
 
-const CACHE = "einkaufsliste-app-v3";
+const CACHE = "einkaufsliste-app-v4";
 const ASSETS = ["index.html", "app.js", "app.css", "manifest.json", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", (event) => {

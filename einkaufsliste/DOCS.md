@@ -1,7 +1,7 @@
 # Einkaufsliste
 
 Einkaufsliste mit **Mengen und Einheiten** (Stück, Gewicht, Volumen), Notizen, Abhaken,
-Dashboard-Karte, Seitenleiste, Sprachsteuerung und einer Offline-App fürs Handy.
+Dashboard-Karte, Seitenleiste, Sprachsteuerung und einer Handy-App, die auch ohne Empfang funktioniert.
 
 ## Funktionen
 
@@ -16,7 +16,7 @@ Dashboard-Karte, Seitenleiste, Sprachsteuerung und einer Offline-App fürs Handy
 - Jede Liste ist zugleich eine **To-do-Entität** (`todo.…`). Damit funktionieren die Standard-To-do-Karte,
   die Sprachsteuerung (Assist), Automationen und die HA-App.
 - Änderungen erscheinen sofort auf allen Geräten (WebSocket-Push)
-- Offline-App fürs Handy: funktioniert auch ohne Empfang im Supermarkt
+- Handy-App: funktioniert auch ohne Empfang im Supermarkt, Anmeldung mit dem normalen HA-Benutzer
 - Eigener Eintrag „Einkaufsliste“ in der Seitenleiste
 
 ## Einrichtung
@@ -66,10 +66,10 @@ Bedienung:
 ## Seitenleiste
 
 Der Eintrag **Einkaufsliste** in der Seitenleiste zeigt die Liste in voller Größe.
-Ein Token ist dort nicht nötig, die Anmeldung übernimmt Home Assistant.
+Eine eigene Anmeldung ist dort nicht nötig, das übernimmt Home Assistant.
 Gibt es mehrere Listen, wechselst du über das Zahnrad.
 
-## Offline-App (für den Einkauf ohne Empfang)
+## Handy-App (funktioniert auch ohne Empfang)
 
 Die Integration bringt eine eigenständige Web-App mit. Sie läuft auch ohne Verbindung zu Home Assistant:
 Abhaken, Hinzufügen und Mengen ändern werden auf dem Handy gespeichert und automatisch übertragen,
@@ -81,16 +81,16 @@ z. B. über Nabu Casa oder ein eigenes Zertifikat (DuckDNS/Let's Encrypt, Revers
 
 **Einrichten:**
 
-1. Zugangstoken erstellen: In Home Assistant links unten auf dein Profil → Reiter *Sicherheit* →
-   ganz unten *Langlebige Zugangstoken* → *Token erstellen* (Name z. B. „Einkaufsliste-App“).
-   Den Token kopieren, er wird nur einmal angezeigt.
-2. Auf dem Handy im Browser öffnen (Chrome auf Android, Safari auf dem iPhone):
+1. Auf dem Handy im Browser öffnen (Chrome auf Android, Safari auf dem iPhone):
    `https://<deine-ha-adresse>/einkaufsliste/app/index.html`
-3. Token einfügen → *Listen laden* → Liste wählen → *Speichern*.
+2. Es erscheint die normale Anmeldeseite von Home Assistant. Dort mit deinem Benutzer anmelden.
+   Bist du im selben Browser schon in Home Assistant angemeldet, entfällt das.
+3. Die Liste öffnet sich automatisch. Gibt es mehrere Listen, wechselst du über das Zahnrad.
 4. Zum Startbildschirm hinzufügen:
    - Android/Chrome: Menü ⋮ → *Zum Startbildschirm hinzufügen* bzw. *App installieren*
    - iPhone/Safari: Teilen-Symbol → *Zum Home-Bildschirm*
-5. Einmal mit Verbindung öffnen, damit die App alles für den Offline-Betrieb speichert.
+
+Die App bleibt angemeldet, auch offline. Abmelden kannst du über das Zahnrad.
 
 **Statusanzeige oben:** „Synchron · 12:34“ = alles übertragen, „Offline · 3 ausstehend“ = 3 Änderungen
 warten auf Verbindung. Ein Tipp auf die Anzeige synchronisiert sofort.
@@ -100,8 +100,8 @@ ankommen; bei Konflikten gilt die zuletzt übertragene. Ein Artikel, den jemand 
 hat, wird übersprungen. Gleiche Artikel werden wie gewohnt zusammengefasst (offline 500 g Mehl + zu Hause
 1 kg Mehl = 1,5 kg).
 
-**Sicherheit:** Der Token gibt vollen Zugriff auf Home Assistant und liegt im Speicher des Browsers auf dem
-Handy. Bei Verlust des Handys den Token in Home Assistant löschen.
+**Handy verloren?** In Home Assistant links unten auf dein Profil → Reiter *Sicherheit* → bei
+*Aktualisierungstoken* den Eintrag mit `/einkaufsliste/app/` löschen. Damit ist die App auf dem Handy abgemeldet.
 
 ## Services
 

@@ -3,8 +3,9 @@
 ## 1.1.0
 
 - Als App installierbar: Die App richtet die Integration automatisch ein
-- Liste in der Seitenleiste (ohne Token)
-- Offline-App fürs Handy mit automatischem Abgleich
+- Liste in der Seitenleiste
+- Handy-App mit automatischem Abgleich, funktioniert auch ohne Empfang
+- Anmeldung in der Handy-App mit dem normalen Home-Assistant-Benutzer (kein Token nötig)
 - Notizfeld beim Hinzufügen
 - Design in Home-Assistant-Blau
 
