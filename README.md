@@ -26,8 +26,8 @@ Die eigentliche Logik steckt in der Integration.
 repository.yaml                      Beschreibung des Repositories für den App-Store
 einkaufsliste/                       die App
 ├── config.yaml                      App-Definition (Seitenleiste, Rechte, Optionen)
-├── Dockerfile, run.sh               Container: installiert die Integration, startet server.py
-├── server.py                        Oberfläche in der Seitenleiste (leitet API-Aufrufe weiter)
+├── Dockerfile, build.yaml           Container-Bauanleitung
+├── server.py                        installiert die Integration, Oberfläche für die Seitenleiste
 ├── DOCS.md, CHANGELOG.md, icon.png, logo.png, translations/
 └── integration/einkaufsliste/       die Home-Assistant-Integration
     ├── __init__.py                  Setup, Karte und Handy-App ausliefern

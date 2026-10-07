@@ -1,5 +1,9 @@
 # Änderungen
 
+## 1.1.1
+
+- Behoben: Installation schlug mit „unknown error … build the image“ fehl
+
 ## 1.1.0
 
 - Als App installierbar: Die App richtet die Integration automatisch ein

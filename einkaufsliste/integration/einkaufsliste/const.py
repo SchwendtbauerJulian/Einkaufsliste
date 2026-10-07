@@ -1,7 +1,7 @@
 """Konstanten für die Einkaufsliste."""
 
 DOMAIN = "einkaufsliste"
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 
 DB_FILENAME = "einkaufsliste.db"
 
