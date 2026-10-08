@@ -16,6 +16,7 @@ import re
 import shutil
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 INTEGRATION_SRC = Path(os.environ.get("INTEGRATION_SRC", "/integration/einkaufsliste"))
@@ -26,6 +27,9 @@ CORE_API = os.environ.get("CORE_API", "http://supervisor/core/api")
 PORT = int(os.environ.get("PORT", "8099"))
 # Nur der Ingress-Proxy von Home Assistant darf zugreifen
 ALLOWED_CLIENTS = set(os.environ.get("ALLOWED_CLIENTS", "172.30.32.2").split(","))
+# Name des Benutzers an die Integration weiterreichen (siehe http_api.py). Als URL-Parameter,
+# weil der Supervisor eigene Header nicht an Home Assistant durchlässt.
+USER_PARAM = "user"
 
 FILES = {
     "/": ("index.html", "text/html; charset=utf-8"),
@@ -179,8 +183,21 @@ class Handler(BaseHTTPRequestHandler):
         body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
         self._proxy(path, body)
 
+    def _ingress_user(self) -> str:
+        """Name des Benutzers, den der Ingress-Proxy von Home Assistant mitschickt."""
+        for header in ("X-Remote-User-Display-Name", "X-Remote-User-Name"):
+            if value := self.headers.get(header, "").strip():
+                try:
+                    # http.server liest Header als Latin-1, Home Assistant schickt UTF-8
+                    return value.encode("latin-1").decode("utf-8")
+                except UnicodeError:
+                    return value
+        return ""
+
     def _proxy(self, path: str, body: bytes | None) -> None:
         url = f"{CORE_API}/einkaufsliste/{path.removeprefix('/proxy/')}"
+        if user := self._ingress_user():
+            url += "?" + urllib.parse.urlencode({USER_PARAM: user})
         request = urllib.request.Request(
             url,
             data=body,

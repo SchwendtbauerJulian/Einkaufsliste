@@ -111,6 +111,7 @@ async def ws_add(
             msg.get("unit"),
             msg.get("note"),
             parse=True,
+            added_by=connection.user.name,
         ),
     )
 

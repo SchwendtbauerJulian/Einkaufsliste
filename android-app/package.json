@@ -1,0 +1,19 @@
+{
+  "name": "einkaufsliste-android",
+  "private": true,
+  "description": "Android-App für die Einkaufsliste (Capacitor-Hülle um die Handy-App)",
+  "scripts": {
+    "web": "node copy-web.js",
+    "sync": "node copy-web.js && cap sync android",
+    "run": "node copy-web.js && cap run android",
+    "apk": "node copy-web.js && cap sync android && cd android && gradlew assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.2",
+    "@capacitor/app": "8.1.1",
+    "@capacitor/core": "8.5.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.2"
+  }
+}

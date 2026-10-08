@@ -1,5 +1,5 @@
 name: Einkaufsliste
-version: "1.1.2"
+version: "1.2.0"
 slug: einkaufsliste
 description: Einkaufsliste mit Mengen (Stück, Gewicht, Volumen), Handy-App und Sprachsteuerung
 arch:

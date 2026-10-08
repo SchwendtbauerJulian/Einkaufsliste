@@ -35,9 +35,18 @@ class ShoppingItem:
     checked: bool = False
     created: str = ""
     checked_at: str | None = None
+    # Wer den Artikel auf die Liste gesetzt hat (Name des Benutzers, mehrere mit Komma)
+    added_by: str | None = None
 
 
 _ITEM_FIELDS = {f.name for f in fields(ShoppingItem)}
+
+
+def _with_person(current: str | None, name: str | None) -> str | None:
+    """Hängt einen weiteren Namen an ("Anna" + "Ben" -> "Anna, Ben")."""
+    if not name or (current and name in current.split(", ")):
+        return current
+    return f"{current}, {name}" if current else name
 
 
 def _empty_to_none(value: str | None) -> str | None:
@@ -146,6 +155,7 @@ class ShoppingList:
         parse: bool = False,
         merge: bool = True,
         item_id: str | None = None,
+        added_by: str | None = None,
     ) -> ShoppingItem:
         """Fügt einen Artikel hinzu oder erhöht die Menge eines vorhandenen."""
         name = name.strip()
@@ -170,6 +180,7 @@ class ShoppingList:
                 existing.checked_at = None
                 existing.quantity, existing.unit = quantity, unit
                 existing.note = note
+                existing.added_by = added_by
                 self._remember(existing, count=True)
                 await self._async_changed()
                 return existing
@@ -177,6 +188,7 @@ class ShoppingList:
             if merged is not None:
                 existing.quantity, existing.unit = merged
                 existing.note = note or existing.note
+                existing.added_by = _with_person(existing.added_by, added_by)
                 self._remember(existing, count=True)
                 await self._async_changed()
                 return existing
@@ -188,6 +200,7 @@ class ShoppingList:
             unit=unit,
             note=note,
             created=dt_util.utcnow().isoformat(),
+            added_by=added_by,
         )
         self.items.append(item)
         self._remember(item, count=True)
@@ -246,8 +259,10 @@ class ShoppingList:
 
     # ------------------------------------------------------------------ Offline-App
 
-    async def async_sync(self, ops: list[dict[str, Any]]) -> dict[str, Any]:
-        """Wendet offline gesammelte Änderungen an und liefert den aktuellen Stand.
+    async def async_sync(
+        self, ops: list[dict[str, Any]], user: str | None = None
+    ) -> dict[str, Any]:
+        """Wendet offline gesammelte Änderungen von `user` an und liefert den aktuellen Stand.
 
         Operationen, die schon verarbeitet wurden (erneute Übertragung) oder sich auf
         inzwischen gelöschte Artikel beziehen, werden übersprungen.
@@ -259,7 +274,7 @@ class ShoppingList:
                 if op["op_id"] in self._seen_ops:
                     continue
                 try:
-                    await self._apply_op(op)
+                    await self._apply_op(op, user)
                 except (KeyError, ValueError) as err:
                     _LOGGER.debug("Sync-Operation übersprungen: %s (%s)", op, err)
                 self._remember_op(op["op_id"])
@@ -280,7 +295,7 @@ class ShoppingList:
     def _resolve(self, item_id: str) -> str:
         return self._id_map.get(item_id, item_id)
 
-    async def _apply_op(self, op: dict[str, Any]) -> None:
+    async def _apply_op(self, op: dict[str, Any], user: str | None) -> None:
         kind = op["op"]
         if kind == "add":
             if any(i.id == op["id"] for i in self.items):
@@ -292,6 +307,7 @@ class ShoppingList:
                 op.get("note"),
                 parse=True,
                 item_id=op["id"],
+                added_by=user,
             )
             # Wurde der Artikel mit einem vorhandenen zusammengefasst, hat er dessen ID
             if item.id != op["id"]:

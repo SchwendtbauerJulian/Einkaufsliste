@@ -1,3 +1,5 @@
 # Linux-Zeilenenden erzwingen – sonst startet run.sh im Container nicht
 * text=auto eol=lf
 *.png binary
+*.bat text eol=crlf
+*.jar binary

@@ -108,9 +108,18 @@ class EinkaufslisteTodoEntity(TodoListEntity):
 
     # ------------------------------------------------------------------ To-do-API
 
+    async def _user_name(self) -> str | None:
+        """Wer den Service aufgerufen hat (Dashboard, Assist, App); None bei Automationen."""
+        if self._context is None or self._context.user_id is None:
+            return None
+        user = await self.hass.auth.async_get_user(self._context.user_id)
+        return None if user is None or user.system_generated else user.name
+
     async def async_create_todo_item(self, item: TodoItem) -> None:
         name, quantity, unit = parse_item(item.summary or "")
-        new = await self._list.async_add(name, quantity, unit, note=item.description)
+        new = await self._list.async_add(
+            name, quantity, unit, note=item.description, added_by=await self._user_name()
+        )
         if item.status == TodoItemStatus.COMPLETED:
             await self._list.async_update(new.id, checked=True)
 
@@ -148,6 +157,7 @@ class EinkaufslisteTodoEntity(TodoListEntity):
             fields.get("unit"),
             fields.get("note"),
             parse="quantity" not in fields,
+            added_by=await self._user_name(),
         )
 
     async def async_service_update_item(self, item: str, **fields: Any) -> None:

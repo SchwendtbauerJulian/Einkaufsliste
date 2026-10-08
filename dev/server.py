@@ -7,6 +7,9 @@ Start:   python dev/server.py
 Öffnen:  http://127.0.0.1:8124/einkaufsliste/app/index.html
 
 Offline testen: Server mit Strg+C beenden, in der App weiterarbeiten, Server wieder starten.
+
+Android-App (Emulator): Adresse http://10.0.2.2:8124, Passwort "test" (beliebiger Benutzername).
+Benutzername "mfa" fragt zusätzlich einen Bestätigungscode ab: 123456.
 Die Daten liegen in dev/einkaufsliste-dev.db.
 """
 
@@ -83,6 +86,7 @@ run(shopping_list.async_load())
 
 AUTH_FILE = DB_PATH.with_name("auth-dev.json")
 codes: dict[str, str] = {}  # code -> client_id
+login_flows: dict[str, dict] = {}  # flow_id -> {client_id, step}
 # refresh_token -> client_id; bleibt über Neustarts erhalten (wie bei Home Assistant)
 refresh_tokens: dict[str, str] = json.loads(AUTH_FILE.read_text()) if AUTH_FILE.exists() else {}
 
@@ -213,9 +217,52 @@ class Handler(SimpleHTTPRequestHandler):
         else:
             self._json(400, {"error": "invalid_request"})
 
+    def _login_flow(self) -> None:
+        """Anmeldeablauf wie /auth/login_flow in Home Assistant (für die Android-App)."""
+        try:
+            body = json.loads(self._read_body() or b"{}")
+        except ValueError:
+            body = {}
+        client_id = body.get("client_id", "")
+
+        def form(flow_id: str, step: str, errors: dict | None = None) -> None:
+            self._json(200, {"type": "form", "flow_id": flow_id, "step_id": step, "errors": errors or {}})
+
+        if self.path == "/auth/login_flow":
+            if not same_origin(client_id, body.get("redirect_uri", "")):
+                self._json(400, {"message": "invalid client id or redirect uri"})
+                return
+            flow_id = secrets.token_hex(8)
+            login_flows[flow_id] = {"client_id": client_id, "step": "init"}
+            form(flow_id, "init")
+            return
+        flow_id = self.path.rsplit("/", 1)[-1]
+        flow = login_flows.get(flow_id)
+        if flow is None or flow["client_id"] != client_id:
+            self._json(404, {"message": "Invalid flow specified"})
+            return
+        if flow["step"] == "init":
+            if body.get("password") != "test":
+                form(flow_id, "init", {"base": "invalid_auth"})
+                return
+            if body.get("username") == "mfa":
+                flow["step"] = "mfa"
+                form(flow_id, "mfa")
+                return
+        elif body.get("code") != "123456":
+            form(flow_id, "mfa", {"base": "invalid_code"})
+            return
+        del login_flows[flow_id]
+        code = secrets.token_hex(8)
+        codes[code] = client_id
+        self._json(200, {"type": "create_entry", "flow_id": flow_id, "result": code})
+
     def do_POST(self):
         if self.path == "/auth/token":
             self._token()
+            return
+        if self.path.startswith("/auth/login_flow"):
+            self._login_flow()
             return
         if self.path != f"/api/einkaufsliste/{LIST_ID}/sync":
             self._json(404, {"message": "Einkaufsliste nicht gefunden"})
@@ -230,7 +277,7 @@ class Handler(SimpleHTTPRequestHandler):
         ops = body.get("ops", [])
         if ops:
             print(f"  Sync: {len(ops)} Änderung(en): {', '.join(op['op'] for op in ops)}")
-        self._json(200, run(shopping_list.async_sync(ops)))
+        self._json(200, run(shopping_list.async_sync(ops, "Testbenutzer")))
 
 
 if __name__ == "__main__":

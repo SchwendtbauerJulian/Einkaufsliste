@@ -10,7 +10,7 @@ import sqlite3
 import threading
 from typing import Any
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS artikel (
@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS artikel (
     erledigt    INTEGER NOT NULL DEFAULT 0,
     erstellt    TEXT    NOT NULL,
     erledigt_am TEXT,
+    hinzugefuegt_von TEXT,
     PRIMARY KEY (liste_id, id)
 );
 CREATE INDEX IF NOT EXISTS idx_artikel_position ON artikel (liste_id, position);
@@ -48,6 +49,7 @@ _ITEM_COLUMNS = {
     "erledigt": "checked",
     "erstellt": "created",
     "erledigt_am": "checked_at",
+    "hinzugefuegt_von": "added_by",
 }
 
 
@@ -68,6 +70,10 @@ class Database:
         with self._lock, closing(self._connect()) as conn:
             conn.execute("PRAGMA journal_mode = WAL")
             conn.executescript(SCHEMA)
+            columns = {row["name"] for row in conn.execute("PRAGMA table_info(artikel)")}
+            if "hinzugefuegt_von" not in columns:
+                # Version 1 -> 2: wer den Artikel auf die Liste gesetzt hat
+                conn.execute("ALTER TABLE artikel ADD COLUMN hinzugefuegt_von TEXT")
             conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
             conn.commit()
 
@@ -108,8 +114,8 @@ class Database:
             conn.executemany(
                 """INSERT INTO artikel
                    (id, liste_id, position, name, menge, einheit, notiz,
-                    erledigt, erstellt, erledigt_am)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    erledigt, erstellt, erledigt_am, hinzugefuegt_von)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 [
                     (
                         item["id"],
@@ -122,6 +128,7 @@ class Database:
                         int(item["checked"]),
                         item["created"],
                         item["checked_at"],
+                        item.get("added_by"),
                     )
                     for position, item in enumerate(items)
                 ],

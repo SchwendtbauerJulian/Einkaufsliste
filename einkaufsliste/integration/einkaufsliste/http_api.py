@@ -13,13 +13,16 @@ from http import HTTPStatus
 from aiohttp import web
 import voluptuous as vol
 
-from homeassistant.components.http import KEY_HASS, HomeAssistantView
+from homeassistant.components.http import KEY_HASS, KEY_HASS_USER, HomeAssistantView
 from homeassistant.config_entries import ConfigEntryState
 
 from .const import DOMAIN
 from .websocket import QUANTITY_SCHEMA, TEXT_SCHEMA, UNIT_SCHEMA
 
 _OP_ID = vol.Required("op_id")
+# Seitenleiste: Name des Benutzers, den die App weiterreicht (URL-Parameter, weil der
+# Supervisor eigene Header nicht an Home Assistant durchlässt)
+USER_PARAM = "user"
 
 OP_SCHEMA = vol.Any(
     vol.Schema(
@@ -58,6 +61,18 @@ OP_SCHEMA = vol.Any(
 SYNC_SCHEMA = vol.Schema({vol.Optional("ops", default=list): [OP_SCHEMA]})
 
 
+def _user_name(request: web.Request) -> str | None:
+    """Name des Benutzers hinter der Anfrage.
+
+    Die Seitenleiste ruft mit dem Zugang der App an (Systembenutzer) und schickt den Namen
+    des eigentlichen Benutzers mit. Normalen Benutzern wird der Header nicht geglaubt.
+    """
+    user = request[KEY_HASS_USER]
+    if not user.system_generated:
+        return user.name
+    return request.query.get(USER_PARAM, "").strip() or None
+
+
 class EinkaufslisteListsView(HomeAssistantView):
     """Liefert alle geladenen Einkaufslisten."""
 
@@ -92,4 +107,4 @@ class EinkaufslisteSyncView(HomeAssistantView):
             return self.json_message("Ungültiges JSON", HTTPStatus.BAD_REQUEST)
         except vol.Invalid as err:
             return self.json_message(f"Ungültige Daten: {err}", HTTPStatus.BAD_REQUEST)
-        return self.json(await entry.runtime_data.async_sync(data["ops"]))
+        return self.json(await entry.runtime_data.async_sync(data["ops"], _user_name(request)))

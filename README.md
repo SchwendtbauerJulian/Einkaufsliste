@@ -40,6 +40,7 @@ einkaufsliste/                       die App
     ├── http_api.py                  API für die Handy-App
     ├── www/einkaufsliste-card.js    Dashboard-Karte
     └── app/                         Handy-App (index.html, app.js, sw.js, Icons)
+android-app/                         Android-App (Capacitor-Hülle um die Handy-App, Abgleich im Hintergrund)
 dev/
 ├── vorschau.html                    Vorschau der Karte im Browser
 └── server.py                        Testserver für die Handy-App (inkl. Test-Anmeldung)
@@ -62,3 +63,4 @@ dev/
   Der Testserver bildet die Anmeldeseite von Home Assistant nach („Als Testbenutzer anmelden“).
   Zum Offline-Testen den Server mit Strg+C beenden, in der App weiterarbeiten und den Server
   wieder starten.
+- **Android-App:** siehe [android-app/README.md](android-app/README.md).

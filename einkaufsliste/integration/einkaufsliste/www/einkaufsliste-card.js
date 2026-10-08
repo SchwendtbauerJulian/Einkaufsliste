@@ -7,7 +7,7 @@
  * show_checked: true        (optional, erledigte Artikel anzeigen)
  */
 
-const CARD_VERSION = "1.1.2";
+const CARD_VERSION = "1.2.0";
 
 const UNIT_GROUPS = [
   { label: "Stück", units: [["stk", "Stk."], ["pkg", "Pkg."], ["dose", "Dose"], ["flasche", "Fl."], ["bund", "Bund"]] },
@@ -22,6 +22,8 @@ const esc = (s) =>
 
 const fmtNumber = (n) => new Intl.NumberFormat("de-DE", { maximumFractionDigits: 3 }).format(n);
 const fmtQty = (item) => (item.quantity == null ? "" : `${fmtNumber(item.quantity)} ${UNIT_LABEL[item.unit] ?? ""}`.trim());
+/** Notiz und wer den Artikel auf die Liste gesetzt hat: "Bio · von Anna" */
+const noteLine = (item) => [item.note, item.added_by && `von ${item.added_by}`].filter(Boolean).join(" · ");
 const parseNumber = (s) => {
   const v = String(s).trim().replace(",", ".");
   if (v === "") return null;
@@ -246,7 +248,7 @@ class EinkaufslisteCard extends HTMLElement {
         <input type="checkbox" data-action="toggle" ${item.checked ? "checked" : ""} aria-label="Abhaken" />
         <div class="text" data-action="toggle">
           <div class="iname">${esc(item.name)}</div>
-          ${item.note ? `<div class="note">${esc(item.note)}</div>` : ""}
+          ${noteLine(item) ? `<div class="note">${esc(noteLine(item))}</div>` : ""}
         </div>
         ${qtyHtml}
         <button class="icon" data-action="${item.checked ? "delete" : "edit"}" aria-label="${item.checked ? "Löschen" : "Bearbeiten"}">

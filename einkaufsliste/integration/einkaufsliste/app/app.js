@@ -11,17 +11,26 @@
  *  - Seitenleiste: übernimmt Home Assistant, die App-Oberfläche leitet die API weiter.
  *  - Handy-App: normale Home-Assistant-Anmeldung (wie die offizielle App). Ist man im selben
  *    Browser schon in Home Assistant angemeldet, wird diese Anmeldung übernommen.
+ *  - Android-App (android-app/): eigenes Anmeldeformular mit Adresse von Home Assistant und optionaler
+ *    Ausweich-Adresse (z. B. Tailscale). Probiert wird zuerst die zuletzt erreichbare.
+ *    Anfragen laufen über die native HTTP-Schicht. Zustand und Anmeldung gehen zusätzlich an
+ *    die App, damit sie Änderungen auch im Hintergrund überträgt.
  */
 "use strict";
 
-const INGRESS = window.EINKAUFSLISTE_INGRESS === true;
+const NATIVE = window.Capacitor?.isNativePlatform?.() === true;
+const INGRESS = !NATIVE && window.EINKAUFSLISTE_INGRESS === true;
 const API = INGRESS ? "proxy" : "/api/einkaufsliste";
 const STORE_KEY = INGRESS ? "einkaufsliste-ingress-v1" : "einkaufsliste-app-v1";
 const AUTH_KEY = "einkaufsliste-auth-v1";
-const CLIENT_ID = `${location.origin}/einkaufsliste/app/`;
-const REDIRECT_URI = `${location.origin}/einkaufsliste/app/index.html`;
+const SERVERS_KEY = "einkaufsliste-servers-v1";
+const CLIENT_ID = NATIVE ? `${location.origin}/` : `${location.origin}/einkaufsliste/app/`;
+const REDIRECT_URI = NATIVE ? `${location.origin}/index.html` : `${location.origin}/einkaufsliste/app/index.html`;
+const BackgroundSync = NATIVE ? window.Capacitor.registerPlugin("BackgroundSync") : null;
 const SYNC_INTERVAL = 15000;
 const REQUEST_TIMEOUT = 10000;
+// Android-App: nicht erreichbare Adresse schnell aufgeben, damit die Ausweich-Adresse drankommt
+const CONNECT_TIMEOUT = 5000;
 
 // ------------------------------------------------------------------ Einheiten & Formatierung
 
@@ -136,10 +145,23 @@ function loadState() {
 }
 
 function saveState() {
+  const json = JSON.stringify(S);
   try {
-    localStorage.setItem(STORE_KEY, JSON.stringify(S));
+    localStorage.setItem(STORE_KEY, json);
   } catch (_e) {
     /* kein Speicher verfügbar */
+  }
+  BackgroundSync?.save({ key: "state", value: json }).catch(() => {});
+}
+
+/** Android-App: Stand übernehmen, den die App im Hintergrund übertragen hat. */
+async function loadNativeState() {
+  try {
+    const stored = await BackgroundSync.load();
+    if (stored.state) S = { ...S, ...JSON.parse(stored.state) };
+    if (stored.auth) auth = JSON.parse(stored.auth);
+  } catch (_e) {
+    /* nichts gespeichert */
   }
 }
 
@@ -233,11 +255,36 @@ function saveAuth(value) {
   } catch (_e) {
     /* kein Speicher verfügbar */
   }
+  BackgroundSync?.save({ key: "auth", value: value ? JSON.stringify(value) : null }).catch(() => {});
+}
+
+/** Android-App: Adressen von Home Assistant, die zuletzt erreichbare zuerst. */
+const serverList = (a) => [a?.server, ...(a?.servers || [])].filter((v, i, all) => v && all.indexOf(v) === i);
+
+/**
+ * Anfrage an Home Assistant. Im Browser ist das die eigene Seite. Die Android-App probiert alle
+ * Adressen der Reihe nach und merkt sich die erreichbare (res.server).
+ */
+async function serverFetch(path, options, servers = serverList(auth)) {
+  if (!NATIVE) return fetchWithTimeout(path, options);
+  let error = new Error("Keine Adresse");
+  for (const server of servers) {
+    try {
+      const res = await fetchWithTimeout(server + path, options);
+      res.server = server;
+      if (auth && auth.server !== server && serverList(auth).includes(server)) saveAuth({ ...auth, server });
+      return res;
+    } catch (err) {
+      error = err;
+    }
+  }
+  throw error;
 }
 
 const needsLogin = () => !INGRESS && !auth;
 
 async function fetchWithTimeout(url, options = {}) {
+  if (NATIVE) return nativeFetch(url, options);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
   try {
@@ -247,23 +294,44 @@ async function fetchWithTimeout(url, options = {}) {
   }
 }
 
-async function tokenRequest(params) {
-  const res = await fetchWithTimeout("/auth/token", {
+/** Android-App: Anfrage über die native HTTP-Schicht (kein CORS, auch http:// im Heimnetz). */
+async function nativeFetch(url, { method = "GET", headers = {}, body } = {}) {
+  const res = await window.Capacitor.Plugins.CapacitorHttp.request({
+    url,
+    method,
+    headers,
+    data: body == null ? undefined : String(body),
+    connectTimeout: CONNECT_TIMEOUT,
+    readTimeout: REQUEST_TIMEOUT,
+    responseType: "text",
+  });
+  const text = typeof res.data === "string" ? res.data : JSON.stringify(res.data);
+  return {
+    status: res.status,
+    ok: res.status >= 200 && res.status < 300,
+    text: async () => text,
+    json: async () => JSON.parse(text),
+  };
+}
+
+async function tokenRequest(params, servers = serverList(auth)) {
+  const res = await serverFetch("/auth/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams(params),
-  });
+  }, servers);
   if (res.status === 400 || res.status === 401 || res.status === 403) throw new AuthError("Anmeldung abgelaufen");
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
 
-function storeTokens(data, clientId, refreshToken) {
+function storeTokens(data, clientId, refreshToken, addresses = { server: auth?.server, servers: auth?.servers }) {
   saveAuth({
     access_token: data.access_token,
     refresh_token: data.refresh_token ?? refreshToken,
     expires: Date.now() + data.expires_in * 1000,
     client_id: clientId,
+    ...(NATIVE && addresses),
   });
 }
 
@@ -296,6 +364,7 @@ function adoptHomeAssistantLogin() {
 
 /** Zur Anmeldeseite von Home Assistant; danach kommt man mit ?code=… zurück. */
 function login() {
+  if (NATIVE) return $("#login").elements[readServers()[0] ? "username" : "server"].focus();
   const state = newId();
   try {
     sessionStorage.setItem("einkaufsliste-login-state", state);
@@ -328,7 +397,7 @@ async function finishLogin() {
 async function logout() {
   // Nur die eigene Anmeldung widerrufen – eine übernommene gehört dem Home-Assistant-Frontend
   if (auth?.client_id === CLIENT_ID) {
-    fetchWithTimeout("/auth/token", {
+    serverFetch("/auth/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ action: "revoke", token: auth.refresh_token }),
@@ -339,12 +408,187 @@ async function logout() {
   saveState();
 }
 
+// ------------------------------------------------------------------ Anmeldung (Android-App)
+
+let loginFlow = null; // laufende Anmeldung: { key, flowId, step }
+
+/** Im Formular eingetragene Adressen: [Heimnetz, Ausweich] */
+function readServers() {
+  try {
+    return JSON.parse(localStorage.getItem(SERVERS_KEY)) || [];
+  } catch (_e) {
+    return [];
+  }
+}
+
+function writeServers(servers) {
+  try {
+    localStorage.setItem(SERVERS_KEY, JSON.stringify(servers));
+  } catch (_e) {
+    /* egal */
+  }
+}
+
+function fillAddresses(f, [server = "", fallback = ""]) {
+  f.server.value = server;
+  f.fallback.value = fallback;
+}
+
+/** Adressfelder in den Einstellungen */
+const addressFields = () => ({ server: $("#addresses [name=server]"), fallback: $("#addresses [name=fallback]") });
+
+/** Adressfelder (Anmeldung und Einstellungen) lesen und vereinheitlichen. */
+function addressInputs(f) {
+  const server = normalizeServer(f.server.value);
+  const fallback = normalizeServer(f.fallback.value);
+  f.server.value = server;
+  f.fallback.value = fallback;
+  writeServers([server, fallback]);
+  return [server, fallback].filter(Boolean);
+}
+
+const ADDRESS_FIELDS = `
+  <label>Adresse von Home Assistant
+    <input name="server" type="url" inputmode="url" autocapitalize="off" placeholder="http://192.168.1.10:8123" /></label>
+  <label>Ausweich-Adresse (optional, z. B. Tailscale)
+    <input name="fallback" type="url" inputmode="url" autocapitalize="off" placeholder="http://100.64.0.1:8123" /></label>`;
+
+/** "homeassistant.local:8123/" -> "http://homeassistant.local:8123" */
+function normalizeServer(value) {
+  let v = value.trim().replace(/\/+$/, "");
+  if (v && !/^https?:\/\//i.test(v)) v = `http://${v}`;
+  return v;
+}
+
+const LOGIN_ERRORS = {
+  invalid_auth: "Benutzername oder Passwort falsch.",
+  invalid_login: "Benutzername oder Passwort falsch.",
+  invalid_code: "Bestätigungscode falsch.",
+};
+
+/** Anmeldung über den Anmeldeablauf von Home Assistant – derselbe, den dessen Anmeldeseite nutzt. */
+async function nativeLogin(form) {
+  const f = form.elements;
+  const msg = form.querySelector(".msg");
+  const servers = addressInputs(f);
+  if (!servers.length) return f.server.focus();
+  const key = servers.join(" ");
+  // Beide Adressen führen zum selben Home Assistant – der Anmeldeablauf gilt also für beide
+  const post = async (path, body) => {
+    const res = await serverFetch(
+      path,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
+      loginFlow?.server ? [loginFlow.server, ...servers] : servers
+    );
+    if (loginFlow) loginFlow.server = res.server;
+    return res;
+  };
+  const showMsg = (text, kind = "") => {
+    msg.textContent = text;
+    msg.className = `msg ${kind}`;
+  };
+  showMsg("Anmelden …");
+  f.submit.disabled = true;
+  try {
+    if (!loginFlow || loginFlow.key !== key) {
+      loginFlow = null;
+      const res = await post("/auth/login_flow", {
+        client_id: CLIENT_ID,
+        handler: ["homeassistant", null],
+        redirect_uri: REDIRECT_URI,
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      loginFlow = { key, server: res.server, flowId: (await res.json()).flow_id, step: "init" };
+    }
+    const data =
+      loginFlow.step === "mfa"
+        ? { client_id: CLIENT_ID, code: f.code.value.trim() }
+        : { client_id: CLIENT_ID, username: f.username.value.trim(), password: f.password.value };
+    const res = await post(`/auth/login_flow/${loginFlow.flowId}`, data);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const result = await res.json();
+    if (result.type === "create_entry") {
+      const server = loginFlow.server;
+      loginFlow = null;
+      const tokens = await tokenRequest(
+        { grant_type: "authorization_code", code: result.result, client_id: CLIENT_ID },
+        [server, ...servers]
+      );
+      storeTokens(tokens, CLIENT_ID, undefined, { server, servers });
+      form.reset();
+      fillAddresses(f, readServers());
+      f.code.hidden = true;
+      showMsg("");
+      render();
+      scheduleSync();
+      return;
+    }
+    if (result.type === "form" && (result.step_id === "init" || result.step_id === "mfa")) {
+      loginFlow.step = result.step_id;
+      f.code.hidden = result.step_id !== "mfa";
+      const error = Object.values(result.errors || {})[0];
+      if (error) showMsg(LOGIN_ERRORS[error] || `Anmeldung fehlgeschlagen (${error}).`, "error");
+      else showMsg("Bestätigungscode aus der Authentifizierungs-App eingeben.");
+      if (result.step_id === "mfa") f.code.focus();
+      return;
+    }
+    loginFlow = null;
+    showMsg("Diese Anmeldeart wird nicht unterstützt.", "error");
+  } catch (_err) {
+    loginFlow = null;
+    f.code.hidden = true;
+    showMsg(`Home Assistant unter ${servers.length > 1 ? "keiner der Adressen" : "dieser Adresse"} erreichbar.`, "error");
+  } finally {
+    f.submit.disabled = false;
+  }
+}
+
+function setupNativeLogin() {
+  const form = document.createElement("form");
+  form.id = "login";
+  form.noValidate = true; // Adresse ohne http:// erlauben, normalizeServer() ergänzt es
+  form.hidden = true;
+  form.innerHTML = `
+    <h2>Mit Home Assistant verbinden</h2>
+    ${ADDRESS_FIELDS}
+    <label>Benutzername<input name="username" autocomplete="username" autocapitalize="off" /></label>
+    <label>Passwort<input name="password" type="password" autocomplete="current-password" /></label>
+    <input name="code" inputmode="numeric" autocomplete="one-time-code" placeholder="Bestätigungscode"
+      aria-label="Bestätigungscode" hidden />
+    <p class="msg"></p>
+    <div class="buttons"><button name="submit" type="submit" class="primary text">Anmelden</button></div>
+    <p class="hint">Die App probiert zuerst die Adresse, die zuletzt funktioniert hat, dann die andere.
+      Mit der Adresse im Heimnetz wird abgeglichen, sobald das Handy zu Hause im WLAN ist. Mit der
+      Tailscale-Adresse auch unterwegs, solange Tailscale auf dem Handy verbunden ist.</p>`;
+  fillAddresses(form.elements, readServers());
+  form.addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    nativeLogin(form);
+  });
+  $("#main").before(form);
+
+  // Adressen auch in den Einstellungen änderbar (ohne neue Anmeldung)
+  const addresses = document.createElement("div");
+  addresses.id = "addresses";
+  addresses.innerHTML = ADDRESS_FIELDS;
+  $("#settings-msg").before(addresses);
+}
+
+/** Einstellungen: geänderte Adressen übernehmen. */
+function saveAddresses() {
+  const f = addressFields();
+  const servers = addressInputs(f);
+  if (!servers.length || servers.join(" ") === (auth.servers || []).join(" ")) return;
+  saveAuth({ ...auth, server: servers[0], servers });
+  fillAddresses($("#login").elements, readServers());
+}
+
 // ------------------------------------------------------------------ Synchronisation
 
 async function request(path, { method = "GET", body } = {}, retried = false) {
   const headers = { "Content-Type": "application/json" };
   if (!INGRESS) headers.Authorization = `Bearer ${await accessToken()}`;
-  const res = await fetchWithTimeout(API + path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  const res = await serverFetch(API + path, { method, headers, body: body ? JSON.stringify(body) : undefined });
   if (res.status === 401) {
     if (INGRESS || retried) throw new AuthError("Nicht angemeldet");
     // Zugangsschlüssel abgelehnt: einmal erneuern und nochmal versuchen
@@ -461,6 +705,12 @@ function render() {
   $("#title").textContent = S.listName || "Einkaufsliste";
   document.title = S.listName || "Einkaufsliste";
   renderStatus();
+  if (NATIVE) {
+    // Statt des Hinweises mit Anmelde-Knopf zeigt die Android-App ihr Anmeldeformular
+    const settingsOpen = !$("#settings").hidden;
+    $("#login").hidden = settingsOpen || !needsLogin();
+    $("#main").hidden = settingsOpen || needsLogin();
+  }
 
   let banner = "";
   if (needsLogin()) {
@@ -492,6 +742,9 @@ function render() {
     .join("");
 }
 
+/** Notiz und wer den Artikel auf die Liste gesetzt hat: "Bio · von Anna" */
+const noteLine = (item) => [item.note, item.added_by && `von ${item.added_by}`].filter(Boolean).join(" · ");
+
 function row(item) {
   const qty = fmtQty(item);
   const step = STEP[item.unit] ?? 1;
@@ -511,7 +764,7 @@ function row(item) {
       <input type="checkbox" data-action="toggle"${item.checked ? " checked" : ""} aria-label="Abhaken" />
       <div class="text" data-action="toggle">
         <div class="name">${esc(item.name)}</div>
-        ${item.note ? `<div class="note">${esc(item.note)}</div>` : ""}
+        ${noteLine(item) ? `<div class="note">${esc(noteLine(item))}</div>` : ""}
       </div>
       ${qtyHtml}
       <button class="icon" data-action="${item.checked ? "delete" : "edit"}" aria-label="${item.checked ? "Löschen" : "Bearbeiten"}">${item.checked ? "✕" : "✎"}</button>
@@ -627,6 +880,14 @@ async function openSettings() {
   $("#main").hidden = true;
   $("#settings").hidden = false;
   $("#logout").hidden = INGRESS || needsLogin();
+  if (NATIVE) {
+    $("#login").hidden = true;
+    $("#addresses").hidden = !auth;
+    if (auth) fillAddresses(addressFields(), auth.servers || [auth.server]);
+    $("#sw-hint").textContent = auth
+      ? `Zuletzt verbunden über ${auth.server}. Offline-Änderungen überträgt die App auch im Hintergrund, sobald Home Assistant erreichbar ist.`
+      : "";
+  }
   const select = $("#list-select");
   select.innerHTML = S.listId ? `<option value="${esc(S.listId)}">${esc(S.listName)}</option>` : "";
   if (needsLogin()) return setSettingsMsg("Nicht angemeldet.", "error");
@@ -646,6 +907,7 @@ async function openSettings() {
 function closeSettings() {
   $("#settings").hidden = true;
   $("#main").hidden = false;
+  if (NATIVE) render();
 }
 
 $("#settings-btn").addEventListener("click", () => ($("#settings").hidden ? openSettings() : closeSettings()));
@@ -653,6 +915,7 @@ $("#status").addEventListener("click", () => (needsLogin() ? login() : scheduleS
 $("#cancel-settings").addEventListener("click", closeSettings);
 
 $("#save-settings").addEventListener("click", () => {
+  if (NATIVE && auth) saveAddresses();
   const select = $("#list-select");
   const listId = select.value;
   if (!listId) return closeSettings();
@@ -679,7 +942,16 @@ $("#logout").addEventListener("click", async () => {
 
 // ------------------------------------------------------------------ Start
 
-if (!INGRESS && "serviceWorker" in navigator && window.isSecureContext) {
+if (NATIVE) {
+  setupNativeLogin();
+  // Zurück-Taste: erst Dialog bzw. Einstellungen schließen, sonst App in den Hintergrund
+  const App = window.Capacitor.registerPlugin("App");
+  App.addListener("backButton", () => {
+    if (editDialog.open) editDialog.close();
+    else if (!$("#settings").hidden) closeSettings();
+    else App.minimizeApp();
+  });
+} else if (!INGRESS && "serviceWorker" in navigator && window.isSecureContext) {
   navigator.serviceWorker.register("sw.js").catch((err) => console.warn("Service Worker:", err));
   $("#sw-hint").textContent = "Offline-Start ist aktiv: Die App startet auch ohne Verbindung.";
 } else if (!INGRESS) {
@@ -693,15 +965,23 @@ window.addEventListener("offline", () => {
   online = false;
   render();
 });
-document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") scheduleSync();
+document.addEventListener("visibilitychange", async () => {
+  if (document.visibilityState !== "visible") return;
+  // Android-App: Stand übernehmen, den die App inzwischen im Hintergrund übertragen hat
+  if (NATIVE && !syncing) {
+    await loadNativeState();
+    render();
+  }
+  scheduleSync();
 });
 setInterval(() => {
   if (document.visibilityState === "visible") sync();
 }, SYNC_INTERVAL);
 
 (async () => {
-  if (!INGRESS) {
+  if (NATIVE) {
+    await loadNativeState();
+  } else if (!INGRESS) {
     await finishLogin();
     if (!auth) adoptHomeAssistantLogin();
   }

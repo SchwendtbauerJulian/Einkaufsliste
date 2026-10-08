@@ -10,6 +10,9 @@ Dashboard-Karte, Seitenleiste, Sprachsteuerung und einer Handy-App, die auch ohn
 - Doppelte Artikel werden zusammengefasst, auch über Einheiten hinweg (1 kg + 500 g = 1,5 kg)
 - Abgehakte Artikel kommen beim erneuten Hinzufügen automatisch wieder auf die Liste
 - Notizen (z. B. Marke)
+- Bei jedem Artikel steht, wer ihn auf die Liste gesetzt hat („von Anna“). Das gilt für Karte, Seitenleiste,
+  Handy-App, Sprachsteuerung und Services. Bei Automationen bleibt das Feld leer. Fügen zwei Personen
+  denselben Artikel hinzu, stehen beide da („von Anna, Ben“).
 - Autovervollständigung: Die Liste merkt sich Artikel samt zuletzt genutzter Einheit
 - Mengen per `−`/`+` anpassen, Artikel bearbeiten und löschen, „Erledigte löschen“
 - Mehrere Listen möglich (z. B. „Supermarkt“, „Drogerie“)
@@ -101,7 +104,27 @@ hat, wird übersprungen. Gleiche Artikel werden wie gewohnt zusammengefasst (off
 1 kg Mehl = 1,5 kg).
 
 **Handy verloren?** In Home Assistant links unten auf dein Profil → Reiter *Sicherheit* → bei
-*Aktualisierungstoken* den Eintrag mit `/einkaufsliste/app/` löschen. Damit ist die App auf dem Handy abgemeldet.
+*Aktualisierungstoken* den Eintrag mit `/einkaufsliste/app/` löschen (Android-App: `https://localhost/`).
+Damit ist die App auf dem Handy abgemeldet.
+
+### Android-App
+
+Es gibt die Handy-App auch als echte Android-App (Ordner `android-app/` im Repository). Sie sieht genauso aus,
+hat aber einen Vorteil: **Sie überträgt Offline-Änderungen auch, wenn sie geschlossen ist.** Du musst sie zu
+Hause also nicht erst öffnen. Android startet den Abgleich, sobald Home Assistant erreichbar ist. Je nach
+Akkusparmodus kann das ein paar Minuten dauern. HTTPS braucht sie nicht.
+
+Beim ersten Start trägst du die Adresse von Home Assistant, Benutzername und Passwort ein (bei aktivierter
+Zwei-Faktor-Anmeldung zusätzlich den Code). Dazu kannst du eine **Ausweich-Adresse** angeben, z. B. die
+Tailscale-Adresse (`http://100.x.y.z:8123`). Ist die erste Adresse nicht erreichbar, probiert die App die
+zweite und merkt sich, welche zuletzt funktioniert hat. Das gilt auch für den Abgleich im Hintergrund.
+
+- Nur Adresse im Heimnetz (z. B. `http://192.168.1.10:8123`): Abgleich, sobald das Handy zu Hause im WLAN ist.
+- Mit Tailscale als Ausweich-Adresse: Abgleich auch unterwegs, solange Tailscale auf dem Handy verbunden ist.
+
+Beide Adressen kannst du später unter dem Zahnrad ändern, ohne dich neu anzumelden.
+
+Wie man die App aufs Handy bekommt, steht in `android-app/README.md`.
 
 ## Services
 
