@@ -7,7 +7,7 @@
  * show_checked: true        (optional, erledigte Artikel anzeigen)
  */
 
-const CARD_VERSION = "1.1.1";
+const CARD_VERSION = "1.1.2";
 
 const UNIT_GROUPS = [
   { label: "Stück", units: [["stk", "Stk."], ["pkg", "Pkg."], ["dose", "Dose"], ["flasche", "Fl."], ["bund", "Bund"]] },

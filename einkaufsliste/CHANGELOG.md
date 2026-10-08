@@ -1,5 +1,10 @@
 # Änderungen
 
+## 1.1.2
+
+- Behoben: Liste in der Seitenleiste synchronisierte nicht („ausstehend“ blieb stehen), weil die App keinen Zugriff auf Home Assistant bekam
+- Fehlt der Zugriff, steht oben jetzt „Kein Zugriff“ statt endlos „ausstehend“
+
 ## 1.1.1
 
 - Behoben: Installation schlug mit „unknown error … build the image“ fehl

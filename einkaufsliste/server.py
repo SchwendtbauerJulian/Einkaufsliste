@@ -23,7 +23,6 @@ CONFIG_DIR = Path(os.environ.get("CONFIG_DIR", "/homeassistant"))
 OPTIONS_FILE = Path(os.environ.get("OPTIONS_FILE", "/data/options.json"))
 APP_DIR = Path(os.environ.get("APP_DIR", str(INTEGRATION_SRC / "app")))
 CORE_API = os.environ.get("CORE_API", "http://supervisor/core/api")
-TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 PORT = int(os.environ.get("PORT", "8099"))
 # Nur der Ingress-Proxy von Home Assistant darf zugreifen
 ALLOWED_CLIENTS = set(os.environ.get("ALLOWED_CLIENTS", "172.30.32.2").split(","))
@@ -43,6 +42,24 @@ INGRESS_FLAG = b"<script>window.EINKAUFSLISTE_INGRESS = true;</script>\n  "
 
 def log(message: str) -> None:
     print(message, flush=True)
+
+
+def supervisor_token() -> str:
+    """Zugangsschlüssel für die Home-Assistant-API.
+
+    Das Basis-Image (s6-overlay) leert die Umgebungsvariablen für das Startprogramm und legt sie
+    stattdessen unter /run/s6/container_environment ab.
+    """
+    for name in ("SUPERVISOR_TOKEN", "HASSIO_TOKEN"):
+        if os.environ.get(name):
+            return os.environ[name]
+        file = Path("/run/s6/container_environment") / name
+        if file.is_file() and (token := file.read_text().strip()):
+            return token
+    return ""
+
+
+TOKEN = supervisor_token()
 
 
 # ---------------------------------------------------------------- Integration installieren
@@ -181,6 +198,8 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    if not TOKEN:
+        log("Kein Zugangsschlüssel für Home Assistant gefunden – die Liste kann nicht synchronisieren.")
     install_integration()
     log(f"Oberfläche für die Seitenleiste läuft auf Port {PORT}")
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

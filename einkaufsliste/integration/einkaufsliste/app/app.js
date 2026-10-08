@@ -118,6 +118,7 @@ function mergeQuantities(q1, u1, q2, u2) {
 let S = loadState();
 let online = null; // null = unbekannt
 let noList = false; // Integration noch nicht eingerichtet
+let accessDenied = false; // Seitenleiste: Home Assistant lehnt die App ab
 let syncing = false;
 let syncTimer = null;
 let doneExpanded = false;
@@ -409,11 +410,14 @@ async function sync() {
     S.queue = S.queue.slice(ops.length);
     S.lastSync = Date.now();
     noList = false;
+    accessDenied = false;
     online = true;
     saveState();
   } catch (err) {
     if (err instanceof AuthError) {
-      saveAuth(null);
+      // In der Seitenleiste hilft Neuanmelden nicht – nicht endlos wiederholen
+      if (INGRESS) accessDenied = true;
+      else saveAuth(null);
       online = true;
     } else {
       online = false;
@@ -421,7 +425,7 @@ async function sync() {
   } finally {
     syncing = false;
     render();
-    if (online && S.queue.length && !needsLogin() && !noList) scheduleSync(500);
+    if (online && S.queue.length && !needsLogin() && !noList && !accessDenied) scheduleSync(500);
   }
 }
 
@@ -439,6 +443,7 @@ function renderStatus() {
   const pending = S.queue.length;
   if (needsLogin()) return setStatusText("Nicht angemeldet", "error");
   if (noList) return setStatusText("Keine Liste", "error");
+  if (accessDenied) return setStatusText(pending ? `Kein Zugriff · ${pending} ausstehend` : "Kein Zugriff", "error");
   if (online === false) {
     return setStatusText(pending ? `Offline · ${pending} ausstehend` : "Offline", "pending");
   }
