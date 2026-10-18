@@ -1149,6 +1149,8 @@ async function openSettings() {
   $("#settings").hidden = false;
   $("#admin").hidden = true;
   $("#logout").hidden = INGRESS || needsLogin();
+  // Produkte und Admin-Modus nur in der Seitenleiste von Home Assistant
+  $("#products-btn").hidden = !INGRESS;
   $("#admin-btn").hidden = !INGRESS;
   if (NATIVE) {
     $("#login").hidden = true;

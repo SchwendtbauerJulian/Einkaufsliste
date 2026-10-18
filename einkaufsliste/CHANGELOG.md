@@ -1,5 +1,9 @@
 # Änderungen
 
+## 1.3.3
+
+- „Produkte: Markt & Kategorie ändern“ gibt es nur noch in der Seitenleiste von Home Assistant, nicht mehr in der Handy- und Android-App
+
 ## 1.3.2
 
 - Neu: Produkte bearbeiten (⚙ → „Produkte: Markt & Kategorie ändern“, Seitenleiste und Handy-App): alle gespeicherten Produkte durchsuchen, Markt und Kategorie ändern oder Produkt löschen, auch offline
