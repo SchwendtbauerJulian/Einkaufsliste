@@ -1,5 +1,9 @@
 # Änderungen
 
+## 1.3.1
+
+- Neu: Über der Liste lässt sich auswählen, welche Märkte angezeigt werden (Karte, Seitenleiste, Handy-App), auch mehrere gleichzeitig. Jeder Knopf zeigt die Anzahl offener Artikel. Die Auswahl gilt nur auf dem jeweiligen Gerät
+
 ## 1.3.0
 
 - Neu: Märkte (Drogerie, Bauernladen, Wöss, Lebensmittel, Sonstige) und bei Lebensmitteln Kategorien (Obst, Gemüse bis Tiefkühlwaren)

@@ -24,6 +24,7 @@ const API = INGRESS ? "proxy" : "/api/einkaufsliste";
 const STORE_KEY = INGRESS ? "einkaufsliste-ingress-v1" : "einkaufsliste-app-v1";
 const AUTH_KEY = "einkaufsliste-auth-v1";
 const SERVERS_KEY = "einkaufsliste-servers-v1";
+const FILTER_KEY = "einkaufsliste-filter-v1";
 const CLIENT_ID = NATIVE ? `${location.origin}/` : `${location.origin}/einkaufsliste/app/`;
 const REDIRECT_URI = NATIVE ? `${location.origin}/index.html` : `${location.origin}/einkaufsliste/app/index.html`;
 const BackgroundSync = NATIVE ? window.Capacitor.registerPlugin("BackgroundSync") : null;
@@ -112,6 +113,37 @@ function groupedRows(items, products, marketList, rowHtml) {
   return html;
 }
 
+/**
+ * Auswahl, welche Märkte angezeigt werden: ein Knopf je Markt mit offenen Artikeln, "" = nicht
+ * zugeordnet. Nichts ausgewählt = alle. Liefert die gefilterten Artikel und die Knopfleiste.
+ */
+function marketFilter(items, products, marketList, selected) {
+  const marketKey = (item) => {
+    const key = products.get(item.name.toLowerCase())?.market;
+    return marketList.some((m) => m.key === key) ? key : "";
+  };
+  // Inzwischen gelöschte Märkte ignorieren
+  const active = selected.filter((k) => k === "" || marketList.some((m) => m.key === k));
+  const counts = new Map();
+  for (const item of items) counts.set(marketKey(item), (counts.get(marketKey(item)) || 0) + 1);
+  const entries = [...marketList, { key: "", name: "Nicht zugeordnet" }].filter(
+    (m) => counts.has(m.key) || active.includes(m.key)
+  );
+  const shown = active.length ? items.filter((i) => active.includes(marketKey(i))) : items;
+  if (entries.length < 2 && !active.length) return { shown, html: "" };
+  const chip = (key, label, on) =>
+    `<button type="button" class="chip${on ? " on" : ""}" data-action="filter" data-market="${esc(key)}" aria-pressed="${on}">${label}</button>`;
+  const html =
+    `<div class="filter">${chip("*", "Alle", !active.length)}` +
+    entries.map((m) => chip(m.key, `${esc(m.name)} <span>${counts.get(m.key) || 0}</span>`, active.includes(m.key))).join("") +
+    `</div>`;
+  return { shown, html };
+}
+
+/** Markt in der Auswahl an-/abwählen ("*" = alle). */
+const toggleMarket = (selected, key) =>
+  key === "*" ? [] : selected.includes(key) ? selected.filter((k) => k !== key) : [...selected, key];
+
 function newId() {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
@@ -182,6 +214,24 @@ let syncing = false;
 let syncTimer = null;
 let doneExpanded = false;
 let editId = null;
+let shownMarkets = loadFilter(); // angezeigte Märkte (nur auf diesem Gerät), leer = alle
+
+function loadFilter() {
+  try {
+    const value = JSON.parse(localStorage.getItem(FILTER_KEY));
+    return Array.isArray(value) ? value : [];
+  } catch (_e) {
+    return [];
+  }
+}
+
+function saveFilter() {
+  try {
+    localStorage.setItem(FILTER_KEY, JSON.stringify(shownMarkets));
+  } catch (_e) {
+    /* kein Speicher verfügbar */
+  }
+}
 
 function loadState() {
   const empty = { listId: "", listName: "", base: { items: [], history: [], products: [], markets: [] }, queue: [], lastSync: null };
@@ -784,9 +834,10 @@ function render() {
   const { items, products } = currentState();
   const open = items.filter((i) => !i.checked);
   const done = items.filter((i) => i.checked);
-  let html = banner;
-  if (!open.length && !banner) html += `<div class="empty">Nichts mehr zu kaufen ✓</div>`;
-  html += groupedRows(open, products, markets(), row);
+  const filter = marketFilter(open, products, markets(), shownMarkets);
+  let html = banner + filter.html;
+  if (!filter.shown.length && !banner) html += `<div class="empty">Nichts mehr zu kaufen ✓</div>`;
+  html += groupedRows(filter.shown, products, markets(), row);
   if (done.length) {
     html += `
       <div class="done-header">
@@ -941,6 +992,11 @@ $("#list").addEventListener("click", (ev) => {
   if (!target) return;
   const action = target.dataset.action;
   if (action === "login") return login();
+  if (action === "filter") {
+    shownMarkets = toggleMarket(shownMarkets, target.dataset.market);
+    saveFilter();
+    return render();
+  }
   if (action === "toggle-done") {
     doneExpanded = !doneExpanded;
     return render();

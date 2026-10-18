@@ -98,6 +98,15 @@ header button.icon { color: var(--header-text); }
 .group:first-child { margin-top: 4px; }
 .subgroup { margin: 10px 0 0; font-size: 0.8em; color: var(--text-2); }
 
+.filter { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+.chip {
+  border: 1px solid var(--divider); border-radius: 999px; padding: 5px 12px;
+  background: var(--surface); color: var(--text); font-size: 0.9em;
+}
+.chip span { color: var(--text-2); margin-left: 2px; }
+.chip.on { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.chip.on span { color: inherit; opacity: 0.8; }
+
 #admin-btn { display: block; margin: 4px 0; padding-left: 0; }
 .admin-market { border-bottom: 1px solid var(--divider); padding: 8px 0; }
 .admin-row { display: flex; align-items: center; gap: 2px; margin: 4px 0; }

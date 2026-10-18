@@ -7,7 +7,7 @@
  * show_checked: true        (optional, erledigte Artikel anzeigen)
  */
 
-const CARD_VERSION = "1.3.0";
+const CARD_VERSION = "1.3.1";
 
 const UNIT_GROUPS = [
   { label: "Stück", units: [["stk", "Stk."], ["pkg", "Pkg."], ["dose", "Dose"], ["flasche", "Fl."], ["bund", "Bund"]] },
@@ -104,6 +104,37 @@ function groupedRows(items, products, marketList, rowHtml) {
   return html;
 }
 
+/**
+ * Auswahl, welche Märkte angezeigt werden: ein Knopf je Markt mit offenen Artikeln, "" = nicht
+ * zugeordnet. Nichts ausgewählt = alle. Liefert die gefilterten Artikel und die Knopfleiste.
+ */
+function marketFilter(items, products, marketList, selected) {
+  const marketKey = (item) => {
+    const key = products.get(item.name.toLowerCase())?.market;
+    return marketList.some((m) => m.key === key) ? key : "";
+  };
+  // Inzwischen gelöschte Märkte ignorieren
+  const active = selected.filter((k) => k === "" || marketList.some((m) => m.key === k));
+  const counts = new Map();
+  for (const item of items) counts.set(marketKey(item), (counts.get(marketKey(item)) || 0) + 1);
+  const entries = [...marketList, { key: "", name: "Nicht zugeordnet" }].filter(
+    (m) => counts.has(m.key) || active.includes(m.key)
+  );
+  const shown = active.length ? items.filter((i) => active.includes(marketKey(i))) : items;
+  if (entries.length < 2 && !active.length) return { shown, html: "" };
+  const chip = (key, label, on) =>
+    `<button type="button" class="chip${on ? " on" : ""}" data-action="filter" data-market="${esc(key)}" aria-pressed="${on}">${label}</button>`;
+  const html =
+    `<div class="filter">${chip("*", "Alle", !active.length)}` +
+    entries.map((m) => chip(m.key, `${esc(m.name)} <span>${counts.get(m.key) || 0}</span>`, active.includes(m.key))).join("") +
+    `</div>`;
+  return { shown, html };
+}
+
+/** Markt in der Auswahl an-/abwählen ("*" = alle). */
+const toggleMarket = (selected, key) =>
+  key === "*" ? [] : selected.includes(key) ? selected.filter((k) => k !== key) : [...selected, key];
+
 /** Kategorien des gewählten Markts; ohne Kategorien bleibt das Feld ausgeblendet. */
 function updateCategoryField(form, markets, category = form.elements.category.value) {
   const categories = markets.find((m) => m.key === form.elements.market.value)?.categories ?? [];
@@ -158,6 +189,7 @@ class EinkaufslisteCard extends HTMLElement {
   setConfig(config) {
     if (!config.entity) throw new Error("Bitte 'entity' angeben (z. B. todo.einkaufsliste)");
     this._config = { show_checked: true, ...config };
+    this._shownMarkets = this._loadFilter();
     this._built = false;
     this._unsubscribe();
     if (this._hass) this.hass = this._hass;
@@ -334,17 +366,36 @@ class EinkaufslisteCard extends HTMLElement {
 
   // ------------------------------------------------------------ Liste
 
+  // Angezeigte Märkte gelten nur für diesen Browser (je Liste), leer = alle
+  _loadFilter() {
+    try {
+      const value = JSON.parse(localStorage.getItem(`einkaufsliste-card-filter:${this._config.entity}`));
+      return Array.isArray(value) ? value : [];
+    } catch (_e) {
+      return [];
+    }
+  }
+
+  _saveFilter() {
+    try {
+      localStorage.setItem(`einkaufsliste-card-filter:${this._config.entity}`, JSON.stringify(this._shownMarkets));
+    } catch (_e) {
+      /* kein Speicher verfügbar */
+    }
+  }
+
   _renderList() {
     const el = this.shadowRoot.querySelector(".list");
     if (!el) return;
     const open = this._items.filter((i) => !i.checked);
     const done = this._items.filter((i) => i.checked);
-    let html = "";
+    const filter = marketFilter(open, this._products, this._markets, this._shownMarkets);
+    let html = filter.html;
 
-    if (!open.length) {
+    if (!filter.shown.length) {
       html += `<div class="empty"><ha-icon icon="mdi:cart-check"></ha-icon> Nichts mehr zu kaufen</div>`;
     } else {
-      html += groupedRows(open, this._products, this._markets, (i) => this._row(i));
+      html += groupedRows(filter.shown, this._products, this._markets, (i) => this._row(i));
     }
 
     if (this._config.show_checked && done.length) {
@@ -396,6 +447,12 @@ class EinkaufslisteCard extends HTMLElement {
     const id = target.closest(".item")?.dataset.id;
     const item = this._items.find((i) => i.id === id);
 
+    if (action === "filter") {
+      this._shownMarkets = toggleMarket(this._shownMarkets, target.dataset.market);
+      this._saveFilter();
+      this._renderList();
+      return;
+    }
     if (action === "toggle-done") {
       this._doneExpanded = !this._doneExpanded;
       this._renderList();
@@ -553,6 +610,14 @@ const STYLES = `
   }
   .group:first-child { margin-top: 4px; }
   .subgroup { margin: 8px 0 0; font-size: 0.8em; color: var(--secondary-text-color); }
+  .filter { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 6px; }
+  .chip {
+    border: 1px solid var(--divider-color, #ddd); border-radius: 999px; padding: 4px 12px;
+    background: none; color: var(--primary-text-color); font-size: 0.9em;
+  }
+  .chip span { color: var(--secondary-text-color); margin-left: 2px; }
+  .chip.on { background: var(--primary-color); border-color: var(--primary-color); color: var(--text-primary-color, #fff); }
+  .chip.on span { color: inherit; opacity: 0.8; }
   [hidden] { display: none !important; }
   button { font: inherit; cursor: pointer; }
   button.primary {
