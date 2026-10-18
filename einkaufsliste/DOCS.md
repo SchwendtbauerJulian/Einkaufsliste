@@ -78,6 +78,13 @@ Der Eintrag **Einkaufsliste** in der Seitenleiste zeigt die Liste in voller Grö
 Eine eigene Anmeldung ist dort nicht nötig, das übernimmt Home Assistant.
 Gibt es mehrere Listen, wechselst du über das Zahnrad.
 
+### Produkte bearbeiten
+
+⚙ → „Produkte: Markt & Kategorie ändern“ (Seitenleiste, Handy-App und Android-App). Dort stehen alle
+gespeicherten Produkte, nach Markt und Kategorie gruppiert und durchsuchbar. Mit ✎ änderst du Markt und
+Kategorie eines Produkts oder löschst es. Ein gelöschtes Produkt wird beim nächsten Hinzufügen wieder
+einem Markt zugeordnet. Änderungen gelten für alle Listen und klappen auch offline.
+
 ### Admin-Modus: Märkte und Kategorien
 
 Nur in der Seitenleiste: ⚙ → „Admin-Modus: Märkte & Kategorien bearbeiten“. Dort kannst du Märkte und

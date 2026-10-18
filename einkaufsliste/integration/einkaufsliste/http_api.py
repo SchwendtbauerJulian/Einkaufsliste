@@ -69,6 +69,16 @@ OP_SCHEMA = vol.Any(
             vol.Required("item_ids"): [str],
         }
     ),
+    # Produktkatalog: Markt/Kategorie ändern, ohne Markt (None) wird das Produkt gelöscht
+    vol.Schema(
+        {
+            _OP_ID: str,
+            vol.Required("op"): "product",
+            vol.Required("name"): vol.All(str, vol.Length(min=1)),
+            vol.Required("market"): MARKET_SCHEMA,
+            vol.Optional("category"): CATEGORY_SCHEMA,
+        }
+    ),
 )
 SYNC_SCHEMA = vol.Schema({vol.Optional("ops", default=list): [OP_SCHEMA]})
 

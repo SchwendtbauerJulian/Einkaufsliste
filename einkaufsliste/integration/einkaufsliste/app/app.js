@@ -321,6 +321,9 @@ function applyOps(baseItems, ops, history, products) {
       if (c.market) assignProduct(products, item.name, c.market, c.category);
     } else if (op.op === "remove") {
       items = items.filter((i) => !op.item_ids.includes(i.id));
+    } else if (op.op === "product") {
+      if (op.market) assignProduct(products, op.name, op.market, op.category);
+      else products.delete(op.name.toLowerCase());
     }
   }
   return items;
@@ -818,7 +821,7 @@ function render() {
   renderStatus();
   if (NATIVE) {
     // Statt des Hinweises mit Anmelde-Knopf zeigt die Android-App ihr Anmeldeformular
-    const settingsOpen = !$("#settings").hidden;
+    const settingsOpen = !$("#settings").hidden || !$("#products").hidden;
     $("#login").hidden = settingsOpen || !needsLogin();
     $("#main").hidden = settingsOpen || needsLogin();
   }
@@ -850,6 +853,7 @@ function render() {
 
   renderSuggestions(products);
   renderMarketSelects();
+  if (!$("#products").hidden) renderProducts(products);
 }
 
 /** Autovervollständigung: oft gekaufte Artikel zuerst, dann alle übrigen bekannten Produkte. */
@@ -866,7 +870,9 @@ function renderSuggestions(products) {
 }
 
 /** Notiz und wer den Artikel auf die Liste gesetzt hat: "Bio · von Anna" */
-const noteLine = (item) => [item.note, item.added_by && `von ${item.added_by}`].filter(Boolean).join(" · ");
+/** Nur die Vornamen: "Anna Huber, Ben Maier" -> "Anna, Ben" */
+const firstNames = (names) => [...new Set(names.split(", ").map((n) => n.trim().split(/\s+/)[0]))].join(", ");
+const noteLine = (item) => [item.note, item.added_by && `von ${firstNames(item.added_by)}`].filter(Boolean).join(" · ");
 
 function row(item) {
   const qty = fmtQty(item);
@@ -885,7 +891,7 @@ function row(item) {
   return `
     <div class="item${item.checked ? " checked" : ""}" data-id="${esc(item.id)}">
       <input type="checkbox" data-action="toggle"${item.checked ? " checked" : ""} aria-label="Abhaken" />
-      <div class="text" data-action="toggle">
+      <div class="text">
         <div class="name">${esc(item.name)}</div>
         ${noteLine(item) ? `<div class="note">${esc(noteLine(item))}</div>` : ""}
       </div>
@@ -898,7 +904,7 @@ function row(item) {
 
 $("#add").elements.unit.innerHTML = unitOptions("");
 $("#edit form").elements.unit.innerHTML = unitOptions("");
-const marketForms = () => [$("#add").elements, $("#edit form").elements];
+const marketForms = () => [$("#add").elements, $("#edit form").elements, $("#product-edit form").elements];
 for (const f of marketForms()) {
   f.market.addEventListener("change", () => {
     delete f.market.dataset.auto;
@@ -1059,6 +1065,75 @@ editForm.querySelector('[data-edit="cancel"]').addEventListener("click", () => e
 editForm.querySelector('[data-edit="delete"]').addEventListener("click", () => {
   queueOp({ op: "remove", item_ids: [editId] });
   editDialog.close();
+});
+
+// ------------------------------------------------------------------ Produkte (Markt & Kategorie)
+
+const productDialog = $("#product-edit");
+const productForm = $("#product-edit form");
+let productName = null; // Produkt im Dialog
+
+function openProducts() {
+  $("#settings").hidden = true;
+  $("#main").hidden = true;
+  $("#products").hidden = false;
+  $("#product-search").value = "";
+  render();
+}
+
+function closeProducts() {
+  $("#products").hidden = true;
+  $("#main").hidden = false;
+  render();
+}
+
+/** Alle gespeicherten Produkte, nach Markt und Kategorie gruppiert, gefiltert nach der Suche. */
+function renderProducts(products) {
+  const search = $("#product-search").value.trim().toLowerCase();
+  const list = [...products.values()]
+    .filter((p) => p.name.toLowerCase().includes(search))
+    .sort((a, b) => a.name.localeCompare(b.name, "de"));
+  const productRow = (p) => `
+    <div class="item" data-name="${esc(p.name)}">
+      <div class="text"><div class="name">${esc(p.name)}</div></div>
+      <button class="icon" data-product="edit" aria-label="Bearbeiten">✎</button>
+    </div>`;
+  $("#product-list").innerHTML = list.length
+    ? groupedRows(list, products, markets(), productRow)
+    : `<div class="empty">${products.size ? "Kein Produkt gefunden" : "Noch keine Produkte gespeichert"}</div>`;
+}
+
+$("#product-search").addEventListener("input", () => renderProducts(currentState().products));
+$("#close-products").addEventListener("click", closeProducts);
+$("#products-btn").addEventListener("click", openProducts);
+
+$("#product-list").addEventListener("click", (ev) => {
+  const row = ev.target.closest("[data-product='edit']")?.closest(".item");
+  if (!row) return;
+  const product = currentState().products.get(row.dataset.name.toLowerCase());
+  if (!product) return;
+  productName = product.name;
+  $("#product-edit h2").textContent = product.name;
+  fillProduct(productForm.elements, product);
+  productDialog.showModal();
+});
+
+productForm.addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  const f = productForm.elements;
+  if (!f.market.value) {
+    f.market.setCustomValidity("Bitte Markt wählen");
+    f.market.reportValidity();
+    return;
+  }
+  queueOp({ op: "product", name: productName, market: f.market.value, category: f.category.value || null });
+  productDialog.close();
+});
+productForm.querySelector('[data-product="cancel"]').addEventListener("click", () => productDialog.close());
+productForm.querySelector('[data-product="delete"]').addEventListener("click", () => {
+  if (!confirm(`„${productName}“ aus den Produkten löschen? Beim nächsten Hinzufügen wird der Markt neu gewählt.`)) return;
+  queueOp({ op: "product", name: productName, market: null });
+  productDialog.close();
 });
 
 // ------------------------------------------------------------------ Einstellungen
@@ -1258,6 +1333,8 @@ if (NATIVE) {
   const App = window.Capacitor.registerPlugin("App");
   App.addListener("backButton", () => {
     if (editDialog.open) editDialog.close();
+    else if (productDialog.open) productDialog.close();
+    else if (!$("#products").hidden) closeProducts();
     else if (!$("#settings").hidden) closeSettings();
     else App.minimizeApp();
   });

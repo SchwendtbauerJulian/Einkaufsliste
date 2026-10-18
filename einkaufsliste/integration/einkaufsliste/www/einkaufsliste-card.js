@@ -7,7 +7,7 @@
  * show_checked: true        (optional, erledigte Artikel anzeigen)
  */
 
-const CARD_VERSION = "1.3.1";
+const CARD_VERSION = "1.3.2";
 
 const UNIT_GROUPS = [
   { label: "Stück", units: [["stk", "Stk."], ["pkg", "Pkg."], ["dose", "Dose"], ["flasche", "Fl."], ["bund", "Bund"]] },
@@ -23,7 +23,9 @@ const esc = (s) =>
 const fmtNumber = (n) => new Intl.NumberFormat("de-DE", { maximumFractionDigits: 3 }).format(n);
 const fmtQty = (item) => (item.quantity == null ? "" : `${fmtNumber(item.quantity)} ${UNIT_LABEL[item.unit] ?? ""}`.trim());
 /** Notiz und wer den Artikel auf die Liste gesetzt hat: "Bio · von Anna" */
-const noteLine = (item) => [item.note, item.added_by && `von ${item.added_by}`].filter(Boolean).join(" · ");
+/** Nur die Vornamen: "Anna Huber, Ben Maier" -> "Anna, Ben" */
+const firstNames = (names) => [...new Set(names.split(", ").map((n) => n.trim().split(/\s+/)[0]))].join(", ");
+const noteLine = (item) => [item.note, item.added_by && `von ${firstNames(item.added_by)}`].filter(Boolean).join(" · ");
 const parseNumber = (s) => {
   const v = String(s).trim().replace(",", ".");
   if (v === "") return null;
@@ -284,7 +286,7 @@ class EinkaufslisteCard extends HTMLElement {
             <select name="market" aria-label="Markt">${options(this._markets, "", "Markt wählen …")}</select>
             <select class="category" name="category" aria-label="Kategorie"></select>
           </div>
-          <input class="note-input" name="note" placeholder="Notiz (optional), z. B. Marke" aria-label="Notiz" />
+          <input class="note-input" name="note" placeholder="Notiz (optional)" aria-label="Notiz" />
         </form>
         <div class="error" hidden></div>
         <div class="edit" hidden></div>
@@ -429,7 +431,7 @@ class EinkaufslisteCard extends HTMLElement {
     return `
       <div class="item ${item.checked ? "checked" : ""}" data-id="${esc(item.id)}">
         <input type="checkbox" data-action="toggle" ${item.checked ? "checked" : ""} aria-label="Abhaken" />
-        <div class="text" data-action="toggle">
+        <div class="text">
           <div class="iname">${esc(item.name)}</div>
           ${noteLine(item) ? `<div class="note">${esc(noteLine(item))}</div>` : ""}
         </div>
@@ -600,8 +602,17 @@ const STYLES = `
     padding: 8px 10px; min-width: 0; box-sizing: border-box;
   }
   input:focus, select:focus { outline: 2px solid var(--primary-color); outline-offset: -1px; }
-  .add { display: grid; grid-template-columns: 1fr 72px 76px 42px; gap: 6px; margin-bottom: 8px; }
-  .add .note-input, .add .product { grid-column: 1 / -1; }
+  /* Zeile 1: Artikel und +, Zeile 2: Markt, Zeile 3: Notiz, Menge, Einheit */
+  .add {
+    display: grid; grid-template-columns: 1fr 72px 76px 42px; gap: 6px; margin-bottom: 8px;
+    grid-template-areas: "name name name add" "product product product product" "note qty unit unit";
+  }
+  .add .name { grid-area: name; }
+  .add .primary { grid-area: add; }
+  .add .product { grid-area: product; }
+  .add .note-input { grid-area: note; }
+  .add .qty { grid-area: qty; }
+  .add .unit { grid-area: unit; }
   .add .product { display: flex; gap: 6px; }
   .add .product select { flex: 1; }
   .group {
@@ -641,7 +652,7 @@ const STYLES = `
   .item input[type="checkbox"] {
     width: 22px; height: 22px; flex: none; margin: 0 4px; accent-color: var(--primary-color); cursor: pointer;
   }
-  .text { flex: 1; min-width: 0; cursor: pointer; padding: 6px 0; }
+  .text { flex: 1; min-width: 0; padding: 6px 0; }
   .iname { color: var(--primary-text-color); overflow-wrap: anywhere; }
   .note { color: var(--secondary-text-color); font-size: 0.85em; overflow-wrap: anywhere; }
   .checked .iname { text-decoration: line-through; color: var(--disabled-text-color, #999); }

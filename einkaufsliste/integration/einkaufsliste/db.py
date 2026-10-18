@@ -206,6 +206,10 @@ class Database:
                 (key, product["name"], product["market"], product["category"]),
             )
 
+    def delete_product(self, key: str) -> None:
+        with self._lock, closing(self._connect()) as conn, conn:
+            conn.execute("DELETE FROM produkte WHERE schluessel = ?", (key,))
+
     def load_markets(self) -> list[dict[str, Any]]:
         """Märkte samt Kategorien, jeweils in ihrer Reihenfolge."""
         with self._lock, closing(self._connect()) as conn:

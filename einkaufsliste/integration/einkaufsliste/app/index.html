@@ -22,14 +22,14 @@
   <main id="main">
     <form id="add" autocomplete="off">
       <input name="name" list="sugg" placeholder="z. B. 2 kg Mehl" aria-label="Artikel" enterkeyhint="done" />
-      <input name="quantity" inputmode="decimal" placeholder="Menge" aria-label="Menge" />
-      <select name="unit" aria-label="Einheit"></select>
-      <button type="submit" class="primary" aria-label="Hinzufügen">+</button>
-      <div class="wide product">
+      <div class="product">
         <select name="market" aria-label="Markt"></select>
         <select name="category" aria-label="Kategorie" hidden></select>
       </div>
-      <input name="note" class="wide" placeholder="Notiz (optional), z. B. Marke" aria-label="Notiz" />
+      <input name="note" placeholder="Notiz (optional)" aria-label="Notiz" />
+      <input name="quantity" inputmode="decimal" placeholder="Menge" aria-label="Menge" />
+      <select name="unit" aria-label="Einheit"></select>
+      <button type="submit" class="primary" aria-label="Hinzufügen">+</button>
     </form>
     <div id="list"></div>
   </main>
@@ -39,6 +39,7 @@
     <label>Liste
       <select id="list-select"></select>
     </label>
+    <button id="products-btn" type="button" class="link">Produkte: Markt &amp; Kategorie ändern</button>
     <button id="admin-btn" type="button" class="link" hidden>Admin-Modus: Märkte &amp; Kategorien bearbeiten</button>
     <p id="settings-msg" class="msg"></p>
     <div class="buttons">
@@ -63,6 +64,33 @@
       <button id="save-admin" type="button" class="primary text">Speichern</button>
     </div>
   </section>
+
+  <section id="products" hidden>
+    <h2>Produkte</h2>
+    <p class="hint">Markt und Kategorie gelten für alle Listen. Ein gelöschtes Produkt bekommt beim nächsten
+      Hinzufügen wieder einen Markt.</p>
+    <input id="product-search" type="search" placeholder="Produkt suchen …" aria-label="Produkt suchen" />
+    <div id="product-list"></div>
+    <div class="buttons">
+      <button id="close-products" type="button" class="primary text">Fertig</button>
+    </div>
+  </section>
+
+  <dialog id="product-edit">
+    <form method="dialog" autocomplete="off">
+      <h2></h2>
+      <div class="row">
+        <label>Markt<select name="market"></select></label>
+        <label hidden>Kategorie<select name="category"></select></label>
+      </div>
+      <div class="buttons">
+        <button type="button" class="link danger" data-product="delete">Löschen</button>
+        <span class="spacer"></span>
+        <button type="button" class="link" data-product="cancel">Abbrechen</button>
+        <button type="submit" class="primary text">Speichern</button>
+      </div>
+    </form>
+  </dialog>
 
   <dialog id="edit">
     <form method="dialog" autocomplete="off">

@@ -129,6 +129,14 @@ class ProductCatalog:
         await self.hass.async_add_executor_job(self.db.save_product, key, product)
         self._notify(source)
 
+    async def async_forget(self, name: str, source: Any = None) -> None:
+        """Entfernt ein Produkt aus dem Katalog; beim nächsten Anlegen wird der Markt neu gewählt."""
+        key = name.strip().casefold()
+        if self.products.pop(key, None) is None:
+            return
+        await self.hass.async_add_executor_job(self.db.delete_product, key)
+        self._notify(source)
+
     async def async_set_markets(self, markets: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Admin-Modus: ersetzt alle Märkte und Kategorien (Neue ohne Schlüssel bekommen einen)."""
         keys: set[str] = set()
@@ -485,3 +493,10 @@ class ShoppingList:
             ids = [i for i in map(self._resolve, op["item_ids"]) if i in existing]
             if ids:
                 await self.async_remove(ids)
+        elif kind == "product":
+            # Produktkatalog bearbeiten: ohne (noch vorhandenen) Markt wird das Produkt entfernt
+            op = self._lenient_market(op)
+            if op["market"]:
+                await self.catalog.async_assign(op["name"], op["market"], op["category"], source=self)
+            else:
+                await self.catalog.async_forget(op["name"], source=self)

@@ -1,5 +1,12 @@
 # Änderungen
 
+## 1.3.2
+
+- Neu: Produkte bearbeiten (⚙ → „Produkte: Markt & Kategorie ändern“, Seitenleiste und Handy-App): alle gespeicherten Produkte durchsuchen, Markt und Kategorie ändern oder Produkt löschen, auch offline
+- Abgehakt wird nur noch mit dem Kästchen, ein Tipp auf den Namen hakt nicht mehr ab (Karte, Seitenleiste, Handy-App)
+- Bei „von …“ steht nur noch der Vorname
+- Eingabe: Menge und Einheit stehen in der Zeile der Notiz
+
 ## 1.3.1
 
 - Neu: Über der Liste lässt sich auswählen, welche Märkte angezeigt werden (Karte, Seitenleiste, Handy-App), auch mehrere gleichzeitig. Jeder Knopf zeigt die Anzahl offener Artikel. Die Auswahl gilt nur auf dem jeweiligen Gerät
