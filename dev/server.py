@@ -8,6 +8,9 @@ Start:   python dev/server.py
 
 Offline testen: Server mit Strg+C beenden, in der App weiterarbeiten, Server wieder starten.
 
+Seitenleiste (mit Admin-Modus für Märkte und Kategorien):
+         http://127.0.0.1:8124/einkaufsliste/app/index.html?ingress
+
 Android-App (Emulator): Adresse http://10.0.2.2:8124, Passwort "test" (beliebiger Benutzername).
 Benutzername "mfa" fragt zusätzlich einen Bestätigungscode ab: 123456.
 Die Daten liegen in dev/einkaufsliste-dev.db.
@@ -58,7 +61,7 @@ package.__path__ = [str(COMPONENT)]
 sys.modules["einkaufsliste"] = package
 
 from einkaufsliste.db import Database  # noqa: E402
-from einkaufsliste.store import ShoppingList  # noqa: E402
+from einkaufsliste.store import ProductCatalog, ShoppingList  # noqa: E402
 
 
 class FakeHass:
@@ -79,7 +82,9 @@ def run(coro):
 
 db = Database(str(DB_PATH))
 db.init()
-shopping_list = ShoppingList(FakeHass(loop), db, LIST_ID)
+catalog = ProductCatalog(FakeHass(loop), db)
+run(catalog.async_load())
+shopping_list = ShoppingList(FakeHass(loop), db, catalog, LIST_ID)
 run(shopping_list.async_load())
 
 # ---------------------------------------------------------------- Anmeldung (wie Home Assistant)
@@ -155,6 +160,17 @@ class Handler(SimpleHTTPRequestHandler):
         self._json(401, {"message": "Nicht angemeldet"})
         return False
 
+    def _api_path(self) -> tuple[str | None, bool]:
+        """API-Pfad ohne Präfix und ob er von der Seitenleiste kommt.
+
+        Die Seitenleiste ruft über proxy/ auf, die Anmeldung übernimmt dort Home Assistant.
+        """
+        path = urlsplit(self.path).path
+        for prefix, ingress in (("/api/einkaufsliste", False), ("/einkaufsliste/app/proxy", True)):
+            if path.startswith(prefix + "/"):
+                return path[len(prefix) :], ingress
+        return None, False
+
     def _read_body(self) -> bytes:
         return self.rfile.read(int(self.headers.get("Content-Length", 0)))
 
@@ -169,9 +185,22 @@ class Handler(SimpleHTTPRequestHandler):
         if url.path == "/auth/authorize":
             self._authorize(parse_qs(url.query))
             return
-        if url.path == "/api/einkaufsliste/lists":
-            if self._authorized():
+        api_path, ingress = self._api_path()
+        if api_path == "/lists":
+            if ingress or self._authorized():
                 self._json(200, [{"list_id": LIST_ID, "name": LIST_NAME}])
+            return
+        if url.path == "/einkaufsliste/app/index.html" and "ingress" in url.query:
+            # Wie die App in der Seitenleiste: Kennzeichen für app.js einfügen
+            body = (APP_DIR / "index.html").read_bytes().replace(
+                b'<script src="app.js">',
+                b'<script>window.EINKAUFSLISTE_INGRESS = true;</script><script src="app.js">',
+            )
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
             return
         if url.path in ("/", "/einkaufsliste", "/einkaufsliste/app", "/einkaufsliste/app/"):
             self.send_response(302)
@@ -264,15 +293,22 @@ class Handler(SimpleHTTPRequestHandler):
         if self.path.startswith("/auth/login_flow"):
             self._login_flow()
             return
-        if self.path != f"/api/einkaufsliste/{LIST_ID}/sync":
+        api_path, ingress = self._api_path()
+        if api_path not in (f"/{LIST_ID}/sync", "/markets"):
             self._json(404, {"message": "Einkaufsliste nicht gefunden"})
             return
-        if not self._authorized():
+        if not ingress and not self._authorized():
             return
         try:
             body = json.loads(self._read_body() or b"{}")
         except ValueError:
             self._json(400, {"message": "Ungültiges JSON"})
+            return
+        if api_path == "/markets":
+            try:
+                self._json(200, run(catalog.async_set_markets(body["markets"])))
+            except (KeyError, TypeError, ValueError) as err:
+                self._json(400, {"message": str(err)})
             return
         ops = body.get("ops", [])
         if ops:

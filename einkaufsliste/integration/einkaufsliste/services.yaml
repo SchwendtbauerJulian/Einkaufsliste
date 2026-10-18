@@ -25,6 +25,14 @@ add_item:
     note:
       selector:
         text:
+    market:
+      example: "Drogerie"
+      selector:
+        text:
+    category:
+      example: "Milchprodukte"
+      selector:
+        text:
 
 update_item:
   target:
@@ -53,6 +61,14 @@ update_item:
           translation_key: unit
           options: [stk, pkg, dose, flasche, bund, g, kg, ml, l]
     note:
+      selector:
+        text:
+    market:
+      example: "Drogerie"
+      selector:
+        text:
+    category:
+      example: "Milchprodukte"
       selector:
         text:
 

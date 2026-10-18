@@ -13,7 +13,13 @@ Dashboard-Karte, Seitenleiste, Sprachsteuerung und einer Handy-App, die auch ohn
 - Bei jedem Artikel steht, wer ihn auf die Liste gesetzt hat („von Anna“). Das gilt für Karte, Seitenleiste,
   Handy-App, Sprachsteuerung und Services. Bei Automationen bleibt das Feld leer. Fügen zwei Personen
   denselben Artikel hinzu, stehen beide da („von Anna, Ben“).
-- Autovervollständigung: Die Liste merkt sich Artikel samt zuletzt genutzter Einheit
+- Märkte: Jedes Produkt gehört zu einem Markt (anfangs Drogerie, Bauernladen, Wöss, Lebensmittel, Sonstige),
+  bei Märkten mit Kategorien zusätzlich zu einer Kategorie (anfangs nur Lebensmittel: Obst, Gemüse → Getränke →
+  … → Tiefkühlwaren). Märkte und Kategorien lassen sich im Admin-Modus der Seitenleiste ändern.
+  Markt und Kategorie legst du beim ersten Anlegen eines Produkts fest, danach werden sie automatisch
+  übernommen. Die Liste ist danach gruppiert, in der Reihenfolge wie im Geschäft. Produkte ohne Markt
+  (z. B. per Sprachsteuerung hinzugefügt) stehen unter „Nicht zugeordnet“ und lassen sich per Stift zuordnen.
+- Autovervollständigung: Vorschläge aus allen bekannten Produkten samt Markt, Kategorie und zuletzt genutzter Einheit
 - Mengen per `−`/`+` anpassen, Artikel bearbeiten und löschen, „Erledigte löschen“
 - Mehrere Listen möglich (z. B. „Supermarkt“, „Drogerie“)
 - Jede Liste ist zugleich eine **To-do-Entität** (`todo.…`). Damit funktionieren die Standard-To-do-Karte,
@@ -64,13 +70,25 @@ Bedienung:
 - Oben Artikel eingeben, z. B. `2 kg Mehl`, oder Menge und Einheit separat wählen
 - Checkbox oder Artikelname antippen = abhaken
 - `−` / `+` ändert die Menge (Schritte: 1 Stk., 100 g, 0,5 kg, 250 ml, 0,5 l)
-- Stift = bearbeiten (Name, Menge, Einheit, Notiz, löschen)
+- Stift = bearbeiten (Name, Menge, Einheit, Markt, Kategorie, Notiz, löschen)
 
 ## Seitenleiste
 
 Der Eintrag **Einkaufsliste** in der Seitenleiste zeigt die Liste in voller Größe.
 Eine eigene Anmeldung ist dort nicht nötig, das übernimmt Home Assistant.
 Gibt es mehrere Listen, wechselst du über das Zahnrad.
+
+### Admin-Modus: Märkte und Kategorien
+
+Nur in der Seitenleiste: ⚙ → „Admin-Modus: Märkte & Kategorien bearbeiten“. Dort kannst du Märkte und
+Kategorien umbenennen, hinzufügen, löschen und mit ↑/↓ sortieren. Jeder Markt kann eigene Kategorien haben.
+In dieser Reihenfolge wird die Liste gruppiert. Änderungen gelten sofort für alle Listen und Geräte.
+
+- Markt gelöscht: Seine Produkte sind danach keinem Markt zugeordnet („Nicht zugeordnet“).
+- Kategorie gelöscht: Die Produkte bleiben im Markt, nur ohne Kategorie.
+
+Die Handy-App und die Android-App haben keinen Admin-Modus. Die Schnittstelle dafür ist nur für
+Administratoren freigegeben.
 
 ## Handy-App (funktioniert auch ohne Empfang)
 
@@ -130,8 +148,8 @@ Wie man die App aufs Handy bekommt, steht in `android-app/README.md`.
 
 | Service | Felder |
 |---|---|
-| `einkaufsliste.add_item` | `name`, `quantity`, `unit`, `note` |
-| `einkaufsliste.update_item` | `item` (Name oder ID), `rename`, `quantity`, `unit`, `note` |
+| `einkaufsliste.add_item` | `name`, `quantity`, `unit`, `note`, `market`, `category` |
+| `einkaufsliste.update_item` | `item` (Name oder ID), `rename`, `quantity`, `unit`, `note`, `market`, `category` |
 | `einkaufsliste.check_item` | `item`, `checked` (Standard: `true`) |
 | `einkaufsliste.remove_item` | `item` |
 
@@ -139,6 +157,9 @@ Dazu kommen die Standard-Services `todo.add_item`, `todo.update_item`, `todo.rem
 `todo.remove_completed_items` und `todo.get_items`.
 
 `unit` erlaubt: `stk`, `pkg`, `dose`, `flasche`, `bund`, `g`, `kg`, `ml`, `l`
+
+`market` und `category`: Name wie in der Seitenleiste (z. B. `Drogerie`, `Milchprodukte`, Groß-/Kleinschreibung
+egal). Die Zuordnung wird für das Produkt gespeichert. Gibst du nur `category` an, ergibt sich der Markt daraus.
 
 ### Beispiele
 
@@ -202,6 +223,9 @@ Alle Listen liegen in der SQLite-Datenbank `<config>/einkaufsliste.db`.
 |---|---|
 | `artikel` | `id`, `liste_id`, `position`, `name`, `menge`, `einheit`, `notiz`, `erledigt` (0/1), `erstellt`, `erledigt_am` |
 | `verlauf` | gemerkte Artikel für die Vorschläge: `liste_id`, `schluessel`, `name`, `einheit`, `anzahl` |
+| `produkte` | Markt und Kategorie jedes Produkts (für alle Listen gemeinsam): `schluessel`, `name`, `markt`, `kategorie` |
+| `maerkte` | Märkte in ihrer Reihenfolge: `schluessel`, `name`, `position` |
+| `kategorien` | Kategorien je Markt: `schluessel`, `markt`, `name`, `position` |
 
 `liste_id` ist die ID des Konfigurationseintrags (steht auch als Attribut `list_id` an der To-do-Entität).
 Wenn du eine Liste in Home Assistant entfernst, werden ihre Zeilen gelöscht.

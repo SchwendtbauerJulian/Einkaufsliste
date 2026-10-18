@@ -7,7 +7,7 @@
  * show_checked: true        (optional, erledigte Artikel anzeigen)
  */
 
-const CARD_VERSION = "1.2.0";
+const CARD_VERSION = "1.3.0";
 
 const UNIT_GROUPS = [
   { label: "Stück", units: [["stk", "Stk."], ["pkg", "Pkg."], ["dose", "Dose"], ["flasche", "Fl."], ["bund", "Bund"]] },
@@ -40,12 +40,109 @@ const unitOptions = (selected) =>
         .join("")}</optgroup>`
   ).join("");
 
+// Märkte & Kategorien kommen vom Server: [{ key, name, categories: [{ key, name }] }]
+const options = (list, selected, empty) =>
+  `<option value="">${empty}</option>` +
+  list.map((e) => `<option value="${esc(e.key)}" ${e.key === selected ? "selected" : ""}>${esc(e.name)}</option>`).join("");
+const productLabel = (p, markets) => {
+  const market = markets.find((m) => m.key === p.market);
+  return [market?.name, market?.categories.find((c) => c.key === p.category)?.name].filter(Boolean).join(" · ");
+};
+
+// Produktname ohne Menge und Einheit ("2 kg Mehl" -> "Mehl"), wie parsing.py
+const UNIT_ALIASES = [
+  "stk", "stk.", "stück", "stueck", "st.", "x", "pkg", "pkg.", "pck", "pck.", "packung", "packungen", "pack", "päckchen",
+  "dose", "dosen", "flasche", "flaschen", "fl", "fl.", "bund", "bd.", "bd", "g", "gr", "gr.", "gramm",
+  "kg", "kilo", "kilogramm", "ml", "milliliter", "l", "liter", "ltr", "ltr.",
+];
+const UNIT_RE = UNIT_ALIASES.sort((a, b) => b.length - a.length)
+  .map((u) => u.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+  .join("|");
+const NUM = String.raw`\d+(?:[.,]\d+)?`;
+const NAME_PATTERNS = [
+  new RegExp(String.raw`^\s*(?<name>.+?)\s*\(\s*${NUM}\s*(?:${UNIT_RE})?\s*\)\s*$`, "iu"),
+  new RegExp(String.raw`^\s*${NUM}\s*(?:(?:${UNIT_RE})(?=[\s)]|$)\s*|\s+)(?<name>.+?)\s*$`, "iu"),
+  new RegExp(String.raw`^\s*(?<name>.+?)\s*[-–:,]?\s*${NUM}\s*(?:${UNIT_RE})\s*$`, "iu"),
+];
+const productKey = (text) => {
+  for (const re of NAME_PATTERNS) {
+    const m = text.trim().match(re);
+    if (m) return m.groups.name.trim().toLowerCase();
+  }
+  return text.trim().toLowerCase();
+};
+
+/** Offene Artikel nach Markt und ggf. Kategorie gruppiert (Reihenfolge wie im Geschäft). */
+function groupedRows(items, products, marketList, rowHtml) {
+  const index = (list, key) => {
+    const i = list.findIndex((e) => e.key === key);
+    return i < 0 ? list.length : i;
+  };
+  const sorted = items
+    .map((item) => {
+      const p = products.get(item.name.toLowerCase());
+      const m = index(marketList, p?.market);
+      return { item, m, c: index(marketList[m]?.categories ?? [], p?.category) };
+    })
+    .sort((a, b) => a.m - b.m || a.c - b.c);
+  let html = "";
+  let lastM = null;
+  let lastC = null;
+  for (const { item, m, c } of sorted) {
+    if (m !== lastM) {
+      html += `<div class="group">${esc(marketList[m]?.name ?? "Nicht zugeordnet")}</div>`;
+      lastM = m;
+      lastC = null;
+    }
+    const categories = marketList[m]?.categories ?? [];
+    if (categories.length && c !== lastC) {
+      html += `<div class="subgroup">${esc(categories[c]?.name ?? "Ohne Kategorie")}</div>`;
+      lastC = c;
+    }
+    html += rowHtml(item);
+  }
+  return html;
+}
+
+/** Kategorien des gewählten Markts; ohne Kategorien bleibt das Feld ausgeblendet. */
+function updateCategoryField(form, markets, category = form.elements.category.value) {
+  const categories = markets.find((m) => m.key === form.elements.market.value)?.categories ?? [];
+  form.elements.category.innerHTML = options(categories, category, "Ohne Kategorie");
+  form.querySelector(".category").hidden = !categories.length;
+}
+
+/** Markt und Kategorie im Formular setzen. */
+function fillProduct(form, markets, product) {
+  form.elements.market.value = product?.market ?? "";
+  form.elements.market.setCustomValidity("");
+  updateCategoryField(form, markets, product?.category ?? "");
+}
+
+/** Markt-Auswahl im Formular einrichten (getMarkets liefert die aktuellen Märkte). */
+function setupMarketField(form, getMarkets) {
+  form.elements.market.addEventListener("change", () => {
+    delete form.elements.market.dataset.auto;
+    form.elements.market.setCustomValidity("");
+    updateCategoryField(form, getMarkets());
+  });
+  updateCategoryField(form, getMarkets());
+}
+
+/** Markt (und Kategorie) aus dem Formular, falls gewählt. */
+function marketPayload(form) {
+  const market = form.elements.market.value;
+  return market ? { market, category: form.elements.category.value || null } : {};
+}
+
 class EinkaufslisteCard extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
     this._items = [];
     this._history = [];
+    this._products = new Map(); // name (klein) -> { name, market, category }
+    this._markets = [];
+    this._marketsShown = null;
     this._unsub = null;
     this._listId = null;
     this._built = false;
@@ -115,6 +212,9 @@ class EinkaufslisteCard extends HTMLElement {
   _onData(data) {
     this._items = data.items || [];
     this._history = data.history || [];
+    this._products = new Map((data.products || []).map((p) => [p.name.toLowerCase(), p]));
+    this._markets = data.markets || [];
+    this._renderMarketSelect();
     this._showError(null);
     if (this._editId && !this._items.some((i) => i.id === this._editId)) this._closeEdit();
     this._renderList();
@@ -148,6 +248,10 @@ class EinkaufslisteCard extends HTMLElement {
           <input class="qty" name="quantity" inputmode="decimal" placeholder="Menge" />
           <select class="unit" name="unit" aria-label="Einheit">${unitOptions("")}</select>
           <button type="submit" class="primary" aria-label="Hinzufügen"><ha-icon icon="mdi:plus"></ha-icon></button>
+          <div class="product">
+            <select name="market" aria-label="Markt">${options(this._markets, "", "Markt wählen …")}</select>
+            <select class="category" name="category" aria-label="Kategorie"></select>
+          </div>
           <input class="note-input" name="note" placeholder="Notiz (optional), z. B. Marke" aria-label="Notiz" />
         </form>
         <div class="error" hidden></div>
@@ -163,6 +267,7 @@ class EinkaufslisteCard extends HTMLElement {
       this._add();
     });
     this._form.elements.name.addEventListener("input", () => this._prefillFromHistory());
+    setupMarketField(this._form, () => this._markets);
     root.querySelector(".list").addEventListener("click", (ev) => this._onListClick(ev));
     this._renderList();
   }
@@ -183,21 +288,48 @@ class EinkaufslisteCard extends HTMLElement {
     el.textContent = message || "";
   }
 
+  /** Autovervollständigung: oft gekaufte Artikel zuerst, dann alle übrigen bekannten Produkte. */
   _renderSuggestions() {
     const el = this.shadowRoot.querySelector("#sugg");
     if (!el) return;
-    el.innerHTML = this._history
-      .slice(0, 200)
-      .map((h) => `<option value="${esc(h.name)}"></option>`)
+    const names = new Map(this._history.map((h) => [h.name.toLowerCase(), h.name]));
+    for (const [key, p] of this._products) if (!names.has(key)) names.set(key, p.name);
+    el.innerHTML = [...names]
+      .slice(0, 500)
+      .map(([key, name]) => {
+        const p = this._products.get(key);
+        return `<option value="${esc(name)}">${p ? esc(productLabel(p, this._markets)) : ""}</option>`;
+      })
       .join("");
+  }
+
+  /** Auswahl der Märkte neu aufbauen, wenn sie sich geändert haben (Admin-Modus). */
+  _renderMarketSelect() {
+    const json = JSON.stringify(this._markets);
+    if (!this._form || json === this._marketsShown) return;
+    this._marketsShown = json;
+    const f = this._form.elements;
+    const category = f.category.value;
+    f.market.innerHTML = options(this._markets, f.market.value, "Markt wählen …");
+    updateCategoryField(this._form, this._markets, category);
   }
 
   _prefillFromHistory() {
     const form = this._form;
     const key = form.elements.name.value.trim().toLowerCase();
     const known = this._history.find((h) => h.name.toLowerCase() === key);
-    if (!known) return;
-    if (known.unit && !form.elements.unit.value) form.elements.unit.value = known.unit;
+    if (known?.unit && !form.elements.unit.value) form.elements.unit.value = known.unit;
+
+    // Markt und Kategorie eines bekannten Produkts vorbelegen
+    const market = form.elements.market;
+    const product = this._products.get(productKey(form.elements.name.value));
+    if (product) {
+      fillProduct(form, this._markets, product);
+      market.dataset.auto = "1";
+    } else if (market.dataset.auto) {
+      fillProduct(form, this._markets, null);
+      delete market.dataset.auto;
+    }
   }
 
   // ------------------------------------------------------------ Liste
@@ -212,7 +344,7 @@ class EinkaufslisteCard extends HTMLElement {
     if (!open.length) {
       html += `<div class="empty"><ha-icon icon="mdi:cart-check"></ha-icon> Nichts mehr zu kaufen</div>`;
     } else {
-      html += open.map((i) => this._row(i)).join("");
+      html += groupedRows(open, this._products, this._markets, (i) => this._row(i));
     }
 
     if (this._config.show_checked && done.length) {
@@ -307,9 +439,18 @@ class EinkaufslisteCard extends HTMLElement {
     if (qty != null) payload.quantity = qty;
     if (form.elements.unit.value) payload.unit = form.elements.unit.value;
     if (form.elements.note.value.trim()) payload.note = form.elements.note.value.trim();
+    // Neues Produkt: Markt muss beim ersten Anlegen festgelegt werden
+    if (!form.elements.market.value && this._markets.length && !this._products.has(productKey(name))) {
+      form.elements.market.setCustomValidity("Neues Produkt – bitte Markt wählen");
+      form.elements.market.reportValidity();
+      return;
+    }
+    Object.assign(payload, marketPayload(form));
     try {
       await this._ws("add", payload);
       form.reset();
+      delete form.elements.market.dataset.auto;
+      updateCategoryField(form, this._markets, "");
       form.elements.name.focus();
     } catch (_err) {
       /* Fehler wird angezeigt */
@@ -320,6 +461,7 @@ class EinkaufslisteCard extends HTMLElement {
 
   _openEdit(item) {
     this._editId = item.id;
+    const product = this._products.get(item.name.toLowerCase());
     const el = this.shadowRoot.querySelector(".edit");
     el.hidden = false;
     el.innerHTML = `
@@ -330,6 +472,10 @@ class EinkaufslisteCard extends HTMLElement {
           <label>Menge<input name="quantity" inputmode="decimal" value="${item.quantity == null ? "" : esc(fmtNumber(item.quantity))}" /></label>
           <label>Einheit<select name="unit">${unitOptions(item.unit || "")}</select></label>
         </div>
+        <div class="row">
+          <label>Markt<select name="market">${options(this._markets, product?.market ?? "", "Markt wählen …")}</select></label>
+          <label class="category">Kategorie<select name="category"></select></label>
+        </div>
         <label>Notiz<input name="note" value="${esc(item.note || "")}" placeholder="z. B. Marke, Bio, …" /></label>
         <div class="buttons">
           <button type="button" class="link danger" data-edit="delete">Löschen</button>
@@ -339,6 +485,8 @@ class EinkaufslisteCard extends HTMLElement {
         </div>
       </form>`;
     const form = el.querySelector("form");
+    setupMarketField(form, () => this._markets);
+    updateCategoryField(form, this._markets, product?.category ?? "");
     form.addEventListener("submit", (ev) => {
       ev.preventDefault();
       this._saveEdit(form);
@@ -365,6 +513,7 @@ class EinkaufslisteCard extends HTMLElement {
         quantity: qty,
         unit: form.elements.unit.value || null,
         note: form.elements.note.value,
+        ...marketPayload(form),
       });
       this._closeEdit();
     } catch (_err) {
@@ -395,7 +544,16 @@ const STYLES = `
   }
   input:focus, select:focus { outline: 2px solid var(--primary-color); outline-offset: -1px; }
   .add { display: grid; grid-template-columns: 1fr 72px 76px 42px; gap: 6px; margin-bottom: 8px; }
-  .add .note-input { grid-column: 1 / -1; }
+  .add .note-input, .add .product { grid-column: 1 / -1; }
+  .add .product { display: flex; gap: 6px; }
+  .add .product select { flex: 1; }
+  .group {
+    margin: 14px 0 2px; font-size: 0.8em; font-weight: 500; letter-spacing: 0.04em;
+    text-transform: uppercase; color: var(--primary-color);
+  }
+  .group:first-child { margin-top: 4px; }
+  .subgroup { margin: 8px 0 0; font-size: 0.8em; color: var(--secondary-text-color); }
+  [hidden] { display: none !important; }
   button { font: inherit; cursor: pointer; }
   button.primary {
     background: var(--primary-color); color: var(--text-primary-color, #fff);

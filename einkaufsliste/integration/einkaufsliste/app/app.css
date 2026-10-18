@@ -53,7 +53,7 @@ header {
 }
 header h1 { font-size: 1.25em; font-weight: 400; margin: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-main, #settings, #login { max-width: 640px; margin: 0 auto; padding: 12px 16px 32px; }
+main, #settings, #login, #admin { max-width: 640px; margin: 0 auto; padding: 12px 16px 32px; }
 
 input, select, textarea {
   font: inherit; color: var(--text); background: var(--field);
@@ -88,6 +88,26 @@ header button.icon { color: var(--header-text); }
 
 #add { display: grid; grid-template-columns: 1fr 76px 80px 48px; gap: 6px; margin-bottom: 12px; }
 #add .wide { grid-column: 1 / -1; }
+#add .product { display: flex; gap: 6px; }
+#add .product select { flex: 1; }
+
+.group {
+  margin: 16px 0 2px; font-size: 0.8em; font-weight: 500; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--primary);
+}
+.group:first-child { margin-top: 4px; }
+.subgroup { margin: 10px 0 0; font-size: 0.8em; color: var(--text-2); }
+
+#admin-btn { display: block; margin: 4px 0; padding-left: 0; }
+.admin-market { border-bottom: 1px solid var(--divider); padding: 8px 0; }
+.admin-row { display: flex; align-items: center; gap: 2px; margin: 4px 0; }
+.admin-row input { flex: 1; }
+.admin-row.category { margin-left: 24px; }
+.admin-row.category input { padding: 6px 10px; font-size: 0.95em; }
+.admin-row button.icon { width: 36px; height: 36px; font-size: 1.05em; }
+.admin-row button.icon:disabled { opacity: 0.25; cursor: default; }
+.admin-row button.danger { color: var(--danger); }
+.add-category { margin-left: 24px; font-size: 0.9em; }
 
 .item {
   display: flex; align-items: center; gap: 8px; padding: 6px 0;
@@ -116,7 +136,7 @@ header button.icon { color: var(--header-text); }
 .empty { text-align: center; color: var(--text-2); padding: 32px 0; }
 .done-header { display: flex; justify-content: space-between; margin-top: 16px; }
 
-#settings h2, #login h2, dialog h2 { font-size: 1.15em; margin: 0 0 12px; }
+#settings h2, #login h2, #admin h2, dialog h2 { font-size: 1.15em; margin: 0 0 12px; }
 #settings label, #login label, dialog label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85em; color: var(--text-2); margin: 12px 0; }
 .msg { min-height: 1.4em; font-size: 0.9em; }
 .msg.error { color: var(--danger); }

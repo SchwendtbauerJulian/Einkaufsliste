@@ -1,7 +1,7 @@
 """Konstanten für die Einkaufsliste."""
 
 DOMAIN = "einkaufsliste"
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 
 DB_FILENAME = "einkaufsliste.db"
 
@@ -36,3 +36,31 @@ CARD_FILENAME = "einkaufsliste-card.js"
 APP_URL = "/einkaufsliste/app"
 
 HISTORY_LIMIT = 500
+
+# Märkte beim ersten Start: (Schlüssel, Name, Kategorien). Danach im Admin-Modus der
+# Seitenleiste änderbar; jeder Markt kann eigene Kategorien haben.
+DEFAULT_MARKETS: list[tuple[str, str, list[tuple[str, str]]]] = [
+    ("drogerie", "Drogerie", []),
+    ("bauernladen", "Bauernladen", []),
+    ("woess", "Wöss", []),
+    (
+        "lebensmittel",
+        "Lebensmittel",
+        [
+            ("obst_gemuese", "Obst, Gemüse"),
+            ("getraenke", "Getränke"),
+            ("milchprodukte", "Milchprodukte"),
+            ("fleisch_wurst", "Fleisch, Wurst"),
+            ("gebaeck", "Gebäck"),
+            ("backwaren", "Backwaren"),
+            ("cerealien", "Cerealien (Müsli, Riegel)"),
+            ("suessigkeiten", "Süßigkeiten"),
+            ("grundnahrungsmittel", "Grundnahrungsmittel (Nudeln, Reis, …)"),
+            ("konserven", "Konserven"),
+            ("haushaltswaren", "Haushaltswaren (Klopapier, …)"),
+            ("knabbereien", "Knabbereien"),
+            ("tiefkuehlwaren", "Tiefkühlwaren"),
+        ],
+    ),
+    ("sonstige", "Sonstige", []),
+]

@@ -1,5 +1,14 @@
 # Änderungen
 
+## 1.3.0
+
+- Neu: Märkte (Drogerie, Bauernladen, Wöss, Lebensmittel, Sonstige) und bei Lebensmitteln Kategorien (Obst, Gemüse bis Tiefkühlwaren)
+- Admin-Modus in der Seitenleiste: Märkte und Kategorien umbenennen, hinzufügen, löschen und sortieren; jeder Markt kann eigene Kategorien haben
+- Markt und Kategorie werden beim ersten Anlegen eines Produkts festgelegt und in der Datenbank gespeichert, danach automatisch vorbelegt
+- Liste nach Markt und Kategorie gruppiert, in der Reihenfolge wie im Geschäft (Karte, Seitenleiste, Handy-App)
+- Autovervollständigung schlägt alle bekannten Produkte vor und zeigt Markt und Kategorie
+- Services `add_item` und `update_item`: neue Felder `market` und `category` (Name des Markts bzw. der Kategorie)
+
 ## 1.2.0
 
 - Neu: Android-App (Ordner `android-app/` im Repository). Sie überträgt Offline-Änderungen auch, wenn sie geschlossen ist

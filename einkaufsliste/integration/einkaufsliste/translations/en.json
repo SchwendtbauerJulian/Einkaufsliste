@@ -47,6 +47,14 @@
         "note": {
           "name": "Notiz",
           "description": "Zusätzliche Info, z. B. Marke."
+        },
+        "market": {
+          "name": "Markt",
+          "description": "Name des Markts, z. B. Drogerie. Wird für das Produkt gespeichert."
+        },
+        "category": {
+          "name": "Kategorie",
+          "description": "Name der Kategorie, z. B. Milchprodukte. Allein angegeben ergibt sich der Markt daraus."
         }
       }
     },
@@ -73,6 +81,14 @@
         "note": {
           "name": "Notiz",
           "description": "Neue Notiz."
+        },
+        "market": {
+          "name": "Markt",
+          "description": "Name des Markts, z. B. Drogerie. Wird für das Produkt gespeichert."
+        },
+        "category": {
+          "name": "Kategorie",
+          "description": "Name der Kategorie, z. B. Milchprodukte. Allein angegeben ergibt sich der Markt daraus."
         }
       }
     },

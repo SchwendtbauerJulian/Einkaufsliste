@@ -25,6 +25,10 @@
       <input name="quantity" inputmode="decimal" placeholder="Menge" aria-label="Menge" />
       <select name="unit" aria-label="Einheit"></select>
       <button type="submit" class="primary" aria-label="Hinzufügen">+</button>
+      <div class="wide product">
+        <select name="market" aria-label="Markt"></select>
+        <select name="category" aria-label="Kategorie" hidden></select>
+      </div>
       <input name="note" class="wide" placeholder="Notiz (optional), z. B. Marke" aria-label="Notiz" />
     </form>
     <div id="list"></div>
@@ -35,6 +39,7 @@
     <label>Liste
       <select id="list-select"></select>
     </label>
+    <button id="admin-btn" type="button" class="link" hidden>Admin-Modus: Märkte &amp; Kategorien bearbeiten</button>
     <p id="settings-msg" class="msg"></p>
     <div class="buttons">
       <button id="logout" type="button" class="link danger">Abmelden</button>
@@ -45,6 +50,20 @@
     <p id="sw-hint" class="hint"></p>
   </section>
 
+  <section id="admin" hidden>
+    <h2>Märkte &amp; Kategorien</h2>
+    <p class="hint">In dieser Reihenfolge wird die Liste sortiert – am besten so, wie du einkaufst.
+      Wird ein Markt gelöscht, sind seine Produkte danach keinem Markt zugeordnet.</p>
+    <div id="admin-list"></div>
+    <button type="button" class="link" data-admin="add-market">+ Markt</button>
+    <p id="admin-msg" class="msg"></p>
+    <div class="buttons">
+      <span class="spacer"></span>
+      <button id="cancel-admin" type="button" class="link">Abbrechen</button>
+      <button id="save-admin" type="button" class="primary text">Speichern</button>
+    </div>
+  </section>
+
   <dialog id="edit">
     <form method="dialog" autocomplete="off">
       <h2>Artikel bearbeiten</h2>
@@ -52,6 +71,10 @@
       <div class="row">
         <label>Menge<input name="quantity" inputmode="decimal" /></label>
         <label>Einheit<select name="unit"></select></label>
+      </div>
+      <div class="row">
+        <label>Markt<select name="market"></select></label>
+        <label hidden>Kategorie<select name="category"></select></label>
       </div>
       <label>Notiz<input name="note" placeholder="z. B. Marke, Bio, …" /></label>
       <div class="buttons">

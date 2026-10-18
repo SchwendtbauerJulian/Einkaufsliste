@@ -40,7 +40,7 @@ FILES = {
     "/icon-192.png": ("icon-192.png", "image/png"),
     "/icon-512.png": ("icon-512.png", "image/png"),
 }
-PROXY = re.compile(r"^/proxy/(lists|[A-Za-z0-9_-]+/sync)$")
+PROXY = re.compile(r"^/proxy/(lists|markets|[A-Za-z0-9_-]+/sync)$")
 INGRESS_FLAG = b"<script>window.EINKAUFSLISTE_INGRESS = true;</script>\n  "
 
 

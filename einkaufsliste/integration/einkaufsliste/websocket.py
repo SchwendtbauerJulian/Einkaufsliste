@@ -18,6 +18,9 @@ _LIST_ID = vol.Required("list_id")
 QUANTITY_SCHEMA = vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=0)))
 UNIT_SCHEMA = vol.Any(None, vol.In(UNITS))
 TEXT_SCHEMA = vol.Any(None, str)
+# Schlüssel oder Name; ob es Markt/Kategorie gibt, prüft der Katalog
+MARKET_SCHEMA = vol.Any(None, str)
+CATEGORY_SCHEMA = vol.Any(None, str)
 
 
 @callback
@@ -94,6 +97,8 @@ def ws_subscribe(
         vol.Optional("quantity"): QUANTITY_SCHEMA,
         vol.Optional("unit"): UNIT_SCHEMA,
         vol.Optional("note"): TEXT_SCHEMA,
+        vol.Optional("market"): MARKET_SCHEMA,
+        vol.Optional("category"): CATEGORY_SCHEMA,
     }
 )
 @websocket_api.async_response
@@ -112,6 +117,8 @@ async def ws_add(
             msg.get("note"),
             parse=True,
             added_by=connection.user.name,
+            market=msg.get("market"),
+            category=msg.get("category"),
         ),
     )
 
@@ -126,6 +133,8 @@ async def ws_add(
         vol.Optional("unit"): UNIT_SCHEMA,
         vol.Optional("note"): TEXT_SCHEMA,
         vol.Optional("checked"): bool,
+        vol.Optional("market"): MARKET_SCHEMA,
+        vol.Optional("category"): CATEGORY_SCHEMA,
     }
 )
 @websocket_api.async_response

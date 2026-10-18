@@ -62,6 +62,56 @@ const unitOptions = (selected) =>
         .join("")}</optgroup>`
   ).join("");
 
+// ------------------------------------------------------------------ Märkte & Kategorien
+
+// Kommen vom Server: [{ key, name, categories: [{ key, name }] }] (im Admin-Modus änderbar)
+const markets = () => S.base.markets || [];
+const marketOf = (key) => markets().find((m) => m.key === key);
+const options = (list, selected, empty) =>
+  `<option value="">${empty}</option>` +
+  list.map((e) => `<option value="${esc(e.key)}"${e.key === selected ? " selected" : ""}>${esc(e.name)}</option>`).join("");
+const productLabel = (p) => {
+  const market = marketOf(p.market);
+  return [market?.name, market?.categories.find((c) => c.key === p.category)?.name].filter(Boolean).join(" · ");
+};
+
+/** Produktkatalog: name (klein) -> { name, market, category } */
+const productMap = (list) => new Map((list || []).map((p) => [p.name.toLowerCase(), p]));
+const assignProduct = (products, name, market, category) =>
+  products.set(name.toLowerCase(), { name, market, category: category ?? null });
+
+/** Offene Artikel nach Markt und ggf. Kategorie gruppiert (Reihenfolge wie im Geschäft). */
+function groupedRows(items, products, marketList, rowHtml) {
+  const index = (list, key) => {
+    const i = list.findIndex((e) => e.key === key);
+    return i < 0 ? list.length : i;
+  };
+  const sorted = items
+    .map((item) => {
+      const p = products.get(item.name.toLowerCase());
+      const m = index(marketList, p?.market);
+      return { item, m, c: index(marketList[m]?.categories ?? [], p?.category) };
+    })
+    .sort((a, b) => a.m - b.m || a.c - b.c);
+  let html = "";
+  let lastM = null;
+  let lastC = null;
+  for (const { item, m, c } of sorted) {
+    if (m !== lastM) {
+      html += `<div class="group">${esc(marketList[m]?.name ?? "Nicht zugeordnet")}</div>`;
+      lastM = m;
+      lastC = null;
+    }
+    const categories = marketList[m]?.categories ?? [];
+    if (categories.length && c !== lastC) {
+      html += `<div class="subgroup">${esc(categories[c]?.name ?? "Ohne Kategorie")}</div>`;
+      lastC = c;
+    }
+    html += rowHtml(item);
+  }
+  return html;
+}
+
 function newId() {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
@@ -134,7 +184,7 @@ let doneExpanded = false;
 let editId = null;
 
 function loadState() {
-  const empty = { listId: "", listName: "", base: { items: [], history: [] }, queue: [], lastSync: null };
+  const empty = { listId: "", listName: "", base: { items: [], history: [], products: [], markets: [] }, queue: [], lastSync: null };
   try {
     const raw = localStorage.getItem(STORE_KEY);
     if (raw) return { ...empty, ...JSON.parse(raw) };
@@ -165,8 +215,8 @@ async function loadNativeState() {
   }
 }
 
-/** Wendet die noch nicht übertragenen Änderungen lokal auf den Serverstand an. */
-function applyOps(baseItems, ops, history) {
+/** Wendet die noch nicht übertragenen Änderungen lokal auf den Serverstand an (products wird mit angepasst). */
+function applyOps(baseItems, ops, history, products) {
   let items = structuredClone(baseItems);
   const now = new Date().toISOString();
   const findByName = (name) => {
@@ -189,6 +239,7 @@ function applyOps(baseItems, ops, history) {
       if (quantity != null && unit == null) unit = known?.unit ?? "stk";
       if (quantity == null) unit = null;
       const note = emptyToNull(op.note);
+      if (op.market) assignProduct(products, name, op.market, op.category);
       const existing = findByName(name);
       if (existing) {
         if (existing.checked) {
@@ -217,6 +268,7 @@ function applyOps(baseItems, ops, history) {
       }
       if (item.quantity == null) item.unit = null;
       else if (item.unit == null) item.unit = "stk";
+      if (c.market) assignProduct(products, item.name, c.market, c.category);
     } else if (op.op === "remove") {
       items = items.filter((i) => !op.item_ids.includes(i.id));
     }
@@ -224,7 +276,11 @@ function applyOps(baseItems, ops, history) {
   return items;
 }
 
-const currentItems = () => applyOps(S.base.items, S.queue, S.base.history);
+function currentState() {
+  const products = productMap(S.base.products);
+  return { items: applyOps(S.base.items, S.queue, S.base.history, products), products };
+}
+const currentItems = () => currentState().items;
 
 function queueOp(op) {
   S.queue.push({ op_id: newId(), ...op });
@@ -404,7 +460,7 @@ async function logout() {
     }).catch(() => {});
   }
   saveAuth(null);
-  S = { listId: "", listName: "", base: { items: [], history: [] }, queue: [], lastSync: null };
+  S = { listId: "", listName: "", base: { items: [], history: [], products: [], markets: [] }, queue: [], lastSync: null };
   saveState();
 }
 
@@ -650,7 +706,12 @@ async function sync() {
     }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    S.base = { items: data.items || [], history: data.history || [] };
+    S.base = {
+      items: data.items || [],
+      history: data.history || [],
+      products: data.products || [],
+      markets: data.markets || [],
+    };
     S.queue = S.queue.slice(ops.length);
     S.lastSync = Date.now();
     noList = false;
@@ -720,12 +781,12 @@ function render() {
     banner = `<div class="banner">${NO_LIST_HINT}</div>`;
   }
 
-  const items = currentItems();
+  const { items, products } = currentState();
   const open = items.filter((i) => !i.checked);
   const done = items.filter((i) => i.checked);
   let html = banner;
   if (!open.length && !banner) html += `<div class="empty">Nichts mehr zu kaufen ✓</div>`;
-  html += open.map(row).join("");
+  html += groupedRows(open, products, markets(), row);
   if (done.length) {
     html += `
       <div class="done-header">
@@ -736,9 +797,20 @@ function render() {
   }
   $("#list").innerHTML = html;
 
-  $("#sugg").innerHTML = S.base.history
-    .slice(0, 200)
-    .map((h) => `<option value="${esc(h.name)}"></option>`)
+  renderSuggestions(products);
+  renderMarketSelects();
+}
+
+/** Autovervollständigung: oft gekaufte Artikel zuerst, dann alle übrigen bekannten Produkte. */
+function renderSuggestions(products) {
+  const names = new Map(S.base.history.map((h) => [h.name.toLowerCase(), h.name]));
+  for (const [key, p] of products) if (!names.has(key)) names.set(key, p.name);
+  $("#sugg").innerHTML = [...names]
+    .slice(0, 500)
+    .map(([key, name]) => {
+      const p = products.get(key);
+      return `<option value="${esc(name)}">${p ? esc(productLabel(p)) : ""}</option>`;
+    })
     .join("");
 }
 
@@ -775,6 +847,56 @@ function row(item) {
 
 $("#add").elements.unit.innerHTML = unitOptions("");
 $("#edit form").elements.unit.innerHTML = unitOptions("");
+const marketForms = () => [$("#add").elements, $("#edit form").elements];
+for (const f of marketForms()) {
+  f.market.addEventListener("change", () => {
+    delete f.market.dataset.auto;
+    f.market.setCustomValidity("");
+    updateCategoryField(f);
+  });
+}
+
+let marketsShown = null;
+/** Auswahl der Märkte neu aufbauen, wenn sie sich geändert haben (Admin-Modus). */
+function renderMarketSelects() {
+  const json = JSON.stringify(markets());
+  if (json === marketsShown) return;
+  marketsShown = json;
+  for (const f of marketForms()) {
+    const category = f.category.value;
+    f.market.innerHTML = options(markets(), f.market.value, "Markt wählen …");
+    updateCategoryField(f, category);
+  }
+}
+
+/** Kategorien des gewählten Markts; ohne Kategorien bleibt das Feld ausgeblendet. */
+function updateCategoryField(f, category = f.category.value) {
+  const categories = marketOf(f.market.value)?.categories ?? [];
+  f.category.innerHTML = options(categories, category, "Ohne Kategorie");
+  f.category.hidden = !categories.length;
+  f.category.closest("label")?.toggleAttribute("hidden", !categories.length);
+}
+
+/** Markt und Kategorie im Formular setzen. */
+function fillProduct(f, product) {
+  f.market.value = product?.market ?? "";
+  f.market.setCustomValidity("");
+  updateCategoryField(f, product?.category ?? "");
+}
+
+/** Hinzufügen: Markt und Kategorie eines bekannten Produkts vorbelegen. */
+function prefillProduct() {
+  const f = $("#add").elements;
+  const known = currentState().products.get(parseItem(f.name.value)[0].toLowerCase());
+  if (known) {
+    fillProduct(f, known);
+    f.market.dataset.auto = "1";
+  } else if (f.market.dataset.auto) {
+    // Vorbelegung eines vorher getippten Produkts wieder entfernen
+    fillProduct(f, null);
+    delete f.market.dataset.auto;
+  }
+}
 
 $("#add").addEventListener("submit", (ev) => {
   ev.preventDefault();
@@ -786,11 +908,23 @@ $("#add").addEventListener("submit", (ev) => {
     alert("Ungültige Menge");
     return;
   }
+  // Neues Produkt: Markt muss beim ersten Anlegen festgelegt werden
+  if (!f.market.value && markets().length && !currentState().products.has(parseItem(name)[0].toLowerCase())) {
+    f.market.setCustomValidity("Neues Produkt – bitte Markt wählen");
+    f.market.reportValidity();
+    return;
+  }
   const op = { op: "add", id: newId(), name };
   if (quantity != null) op.quantity = quantity;
   if (f.unit.value) op.unit = f.unit.value;
   if (f.note.value.trim()) op.note = f.note.value.trim();
+  if (f.market.value) {
+    op.market = f.market.value;
+    op.category = f.category.value || null;
+  }
   ev.target.reset();
+  delete f.market.dataset.auto;
+  updateCategoryField(f, "");
   f.name.focus();
   queueOp(op);
 });
@@ -799,6 +933,7 @@ $("#add").elements.name.addEventListener("input", (ev) => {
   const unit = $("#add").elements.unit;
   const known = S.base.history.find((h) => h.name.toLowerCase() === ev.target.value.trim().toLowerCase());
   if (known?.unit && !unit.value) unit.value = known.unit;
+  prefillProduct();
 });
 
 $("#list").addEventListener("click", (ev) => {
@@ -843,6 +978,7 @@ function openEdit(item) {
   f.quantity.value = item.quantity == null ? "" : fmtNumber(item.quantity);
   f.unit.value = item.unit || "";
   f.note.value = item.note || "";
+  fillProduct(f, currentState().products.get(item.name.toLowerCase()));
   editDialog.showModal();
 }
 
@@ -855,11 +991,12 @@ editForm.addEventListener("submit", (ev) => {
     return;
   }
   if (!f.name.value.trim()) return;
-  queueOp({
-    op: "update",
-    item_id: editId,
-    changes: { name: f.name.value.trim(), quantity, unit: f.unit.value || null, note: f.note.value },
-  });
+  const changes = { name: f.name.value.trim(), quantity, unit: f.unit.value || null, note: f.note.value };
+  if (f.market.value) {
+    changes.market = f.market.value;
+    changes.category = f.category.value || null;
+  }
+  queueOp({ op: "update", item_id: editId, changes });
   editDialog.close();
 });
 editForm.querySelector('[data-edit="cancel"]').addEventListener("click", () => editDialog.close());
@@ -879,7 +1016,9 @@ function setSettingsMsg(text, kind = "") {
 async function openSettings() {
   $("#main").hidden = true;
   $("#settings").hidden = false;
+  $("#admin").hidden = true;
   $("#logout").hidden = INGRESS || needsLogin();
+  $("#admin-btn").hidden = !INGRESS;
   if (NATIVE) {
     $("#login").hidden = true;
     $("#addresses").hidden = !auth;
@@ -921,7 +1060,7 @@ $("#save-settings").addEventListener("click", () => {
   if (!listId) return closeSettings();
   if (listId !== S.listId) {
     if (S.queue.length && !confirm(`${S.queue.length} nicht übertragene Änderungen gehen verloren. Trotzdem wechseln?`)) return;
-    S.base = { items: [], history: [] };
+    S.base = { items: [], history: [], products: [], markets: [] };
     S.queue = [];
     S.lastSync = null;
   }
@@ -939,6 +1078,121 @@ $("#logout").addEventListener("click", async () => {
   closeSettings();
   render();
 });
+
+// ------------------------------------------------------------------ Admin-Modus (nur Seitenleiste)
+
+let adminDraft = null; // Märkte und Kategorien in Bearbeitung
+
+function setAdminMsg(text, kind = "") {
+  const el = $("#admin-msg");
+  el.textContent = text;
+  el.className = `msg ${kind}`;
+}
+
+function openAdmin() {
+  adminDraft = structuredClone(markets());
+  $("#settings").hidden = true;
+  $("#main").hidden = true;
+  $("#admin").hidden = false;
+  setAdminMsg(S.lastSync ? "" : "Noch nicht mit Home Assistant abgeglichen.", S.lastSync ? "" : "error");
+  renderAdmin();
+}
+
+function closeAdmin() {
+  adminDraft = null;
+  $("#admin").hidden = true;
+  $("#main").hidden = false;
+}
+
+const adminRow = (entry, path, isCategory, first, last) => `
+  <div class="admin-row${isCategory ? " category" : ""}" data-path="${path}">
+    <input value="${esc(entry.name)}" data-admin="name" placeholder="${isCategory ? "Kategorie" : "Markt"}"
+      aria-label="${isCategory ? "Kategorie" : "Markt"}" />
+    <button type="button" class="icon" data-admin="up" aria-label="Nach oben"${first ? " disabled" : ""}>&#x2191;&#xFE0E;</button>
+    <button type="button" class="icon" data-admin="down" aria-label="Nach unten"${last ? " disabled" : ""}>&#x2193;&#xFE0E;</button>
+    <button type="button" class="icon danger" data-admin="delete" aria-label="Löschen">✕</button>
+  </div>`;
+
+function renderAdmin() {
+  $("#admin-list").innerHTML = adminDraft
+    .map(
+      (m, i) => `
+      <div class="admin-market">
+        ${adminRow(m, i, false, i === 0, i === adminDraft.length - 1)}
+        ${m.categories.map((c, j) => adminRow(c, `${i}.${j}`, true, j === 0, j === m.categories.length - 1)).join("")}
+        <button type="button" class="link add-category" data-path="${i}" data-admin="add-category">+ Kategorie</button>
+      </div>`
+    )
+    .join("");
+}
+
+/** "2" -> [Märkte, 2]; "2.5" -> [Kategorien von Markt 2, 5] */
+function adminTarget(path) {
+  const [i, j] = path.split(".").map(Number);
+  return j === undefined ? [adminDraft, i] : [adminDraft[i].categories, j];
+}
+
+$("#admin").addEventListener("input", (ev) => {
+  if (ev.target.dataset.admin !== "name") return;
+  const [list, i] = adminTarget(ev.target.closest("[data-path]").dataset.path);
+  list[i].name = ev.target.value;
+});
+
+$("#admin").addEventListener("click", (ev) => {
+  const button = ev.target.closest("button[data-admin]");
+  if (!button) return;
+  const action = button.dataset.admin;
+  const path = button.closest("[data-path]")?.dataset.path;
+  let focus = null;
+  if (action === "add-market") {
+    adminDraft.push({ key: null, name: "", categories: [] });
+    focus = String(adminDraft.length - 1);
+  } else if (action === "add-category") {
+    const categories = adminDraft[Number(path)].categories;
+    categories.push({ key: null, name: "" });
+    focus = `${path}.${categories.length - 1}`;
+  } else if (action === "up" || action === "down") {
+    const [list, i] = adminTarget(path);
+    const k = action === "up" ? i - 1 : i + 1;
+    [list[i], list[k]] = [list[k], list[i]];
+  } else if (action === "delete") {
+    const [list, i] = adminTarget(path);
+    const entry = list[i];
+    const isCategory = path.includes(".");
+    const field = isCategory ? "category" : "market";
+    const count = entry.key ? [...currentState().products.values()].filter((p) => p[field] === entry.key).length : 0;
+    const consequence = isCategory ? "danach ohne Kategorie" : "danach keinem Markt zugeordnet";
+    if (count && !confirm(`„${entry.name}“ löschen? ${count} Produkt(e) sind ${consequence}.`)) return;
+    list.splice(i, 1);
+  }
+  renderAdmin();
+  if (focus != null) $(`#admin-list [data-path="${focus}"] input`).focus();
+});
+
+$("#cancel-admin").addEventListener("click", closeAdmin);
+
+$("#save-admin").addEventListener("click", async () => {
+  const entries = adminDraft.flatMap((m) => [m, ...m.categories]);
+  if (entries.some((e) => !e.name.trim())) {
+    return setAdminMsg("Jeder Markt und jede Kategorie braucht einen Namen.", "error");
+  }
+  setAdminMsg("Speichern …");
+  try {
+    const res = await request("/markets", { method: "POST", body: { markets: adminDraft } });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return setAdminMsg(data.message || `Speichern fehlgeschlagen (HTTP ${res.status})`, "error");
+    S.base.markets = data;
+    saveState();
+    closeAdmin();
+    render();
+    // Zuordnungen gelöschter Märkte/Kategorien hat der Server entfernt
+    scheduleSync();
+  } catch (err) {
+    setAdminMsg(err instanceof AuthError ? "Kein Zugriff." : "Home Assistant nicht erreichbar.", "error");
+  }
+});
+
+$("#admin-btn").addEventListener("click", openAdmin);
 
 // ------------------------------------------------------------------ Start
 

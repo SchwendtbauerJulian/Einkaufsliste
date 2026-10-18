@@ -27,6 +27,9 @@ _ITEM_FIELDS = {
     vol.Optional("quantity"): _QUANTITY,
     vol.Optional("unit"): vol.In(UNITS),
     vol.Optional("note"): cv.string,
+    # Schlüssel oder Name, geprüft im Katalog
+    vol.Optional("market"): cv.string,
+    vol.Optional("category"): cv.string,
 }
 
 
@@ -158,6 +161,8 @@ class EinkaufslisteTodoEntity(TodoListEntity):
             fields.get("note"),
             parse="quantity" not in fields,
             added_by=await self._user_name(),
+            market=fields.get("market"),
+            category=fields.get("category"),
         )
 
     async def async_service_update_item(self, item: str, **fields: Any) -> None:

@@ -10,7 +10,9 @@ import sqlite3
 import threading
 from typing import Any
 
-SCHEMA_VERSION = 2
+from .const import DEFAULT_MARKETS
+
+SCHEMA_VERSION = 4
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS artikel (
@@ -36,6 +38,27 @@ CREATE TABLE IF NOT EXISTS verlauf (
     einheit   TEXT,
     anzahl    INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (liste_id, schluessel)
+);
+
+-- Produktkatalog (für alle Listen gemeinsam): in welchem Markt es ein Produkt gibt
+CREATE TABLE IF NOT EXISTS produkte (
+    schluessel TEXT NOT NULL PRIMARY KEY,
+    name       TEXT NOT NULL,
+    markt      TEXT NOT NULL,
+    kategorie  TEXT
+);
+
+-- Märkte und ihre Kategorien, Reihenfolge wie im Geschäft (im Admin-Modus änderbar)
+CREATE TABLE IF NOT EXISTS maerkte (
+    schluessel TEXT    NOT NULL PRIMARY KEY,
+    name       TEXT    NOT NULL,
+    position   INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS kategorien (
+    schluessel TEXT    NOT NULL PRIMARY KEY,
+    markt      TEXT    NOT NULL,
+    name       TEXT    NOT NULL,
+    position   INTEGER NOT NULL
 );
 """
 
@@ -69,7 +92,21 @@ class Database:
         """Legt die Tabellen an (falls noch nicht vorhanden)."""
         with self._lock, closing(self._connect()) as conn:
             conn.execute("PRAGMA journal_mode = WAL")
+            version = conn.execute("PRAGMA user_version").fetchone()[0]
             conn.executescript(SCHEMA)
+            if version < 4:
+                # Version 3 -> 4: Märkte und Kategorien mit den Vorgaben füllen
+                self._write_markets(
+                    conn,
+                    [
+                        {
+                            "key": key,
+                            "name": name,
+                            "categories": [{"key": k, "name": n} for k, n in categories],
+                        }
+                        for key, name, categories in DEFAULT_MARKETS
+                    ],
+                )
             columns = {row["name"] for row in conn.execute("PRAGMA table_info(artikel)")}
             if "hinzugefuegt_von" not in columns:
                 # Version 1 -> 2: wer den Artikel auf die Liste gesetzt hat
@@ -148,6 +185,71 @@ class Database:
                     for key, entry in history.items()
                 ],
             )
+
+    def load_products(self) -> dict[str, dict[str, Any]]:
+        """Liest den Produktkatalog: name.casefold() -> Produkt."""
+        with self._lock, closing(self._connect()) as conn:
+            return {
+                row["schluessel"]: {
+                    "name": row["name"],
+                    "market": row["markt"],
+                    "category": row["kategorie"],
+                }
+                for row in conn.execute("SELECT * FROM produkte")
+            }
+
+    def save_product(self, key: str, product: dict[str, Any]) -> None:
+        with self._lock, closing(self._connect()) as conn, conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO produkte (schluessel, name, markt, kategorie)
+                   VALUES (?, ?, ?, ?)""",
+                (key, product["name"], product["market"], product["category"]),
+            )
+
+    def load_markets(self) -> list[dict[str, Any]]:
+        """Märkte samt Kategorien, jeweils in ihrer Reihenfolge."""
+        with self._lock, closing(self._connect()) as conn:
+            markets = [
+                {"key": row["schluessel"], "name": row["name"], "categories": []}
+                for row in conn.execute("SELECT * FROM maerkte ORDER BY position")
+            ]
+            by_key = {m["key"]: m for m in markets}
+            for row in conn.execute("SELECT * FROM kategorien ORDER BY position"):
+                if (market := by_key.get(row["markt"])) is not None:
+                    market["categories"].append({"key": row["schluessel"], "name": row["name"]})
+        return markets
+
+    def save_markets(self, markets: list[dict[str, Any]]) -> None:
+        """Ersetzt alle Märkte und Kategorien.
+
+        Produkte eines gelöschten Markts sind danach nicht mehr zugeordnet, Produkte einer
+        gelöschten Kategorie behalten ihren Markt.
+        """
+        with self._lock, closing(self._connect()) as conn, conn:
+            self._write_markets(conn, markets)
+            conn.execute("DELETE FROM produkte WHERE markt NOT IN (SELECT schluessel FROM maerkte)")
+            conn.execute(
+                """UPDATE produkte SET kategorie = NULL
+                   WHERE kategorie IS NOT NULL AND kategorie NOT IN
+                     (SELECT schluessel FROM kategorien WHERE markt = produkte.markt)"""
+            )
+
+    @staticmethod
+    def _write_markets(conn: sqlite3.Connection, markets: list[dict[str, Any]]) -> None:
+        conn.execute("DELETE FROM maerkte")
+        conn.execute("DELETE FROM kategorien")
+        conn.executemany(
+            "INSERT INTO maerkte (schluessel, name, position) VALUES (?, ?, ?)",
+            [(m["key"], m["name"], i) for i, m in enumerate(markets)],
+        )
+        conn.executemany(
+            "INSERT INTO kategorien (schluessel, markt, name, position) VALUES (?, ?, ?, ?)",
+            [
+                (c["key"], m["key"], c["name"], i)
+                for m in markets
+                for i, c in enumerate(m["categories"])
+            ],
+        )
 
     def delete_list(self, list_id: str) -> None:
         with self._lock, closing(self._connect()) as conn, conn:

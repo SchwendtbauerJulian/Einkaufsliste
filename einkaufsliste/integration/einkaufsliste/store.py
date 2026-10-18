@@ -56,13 +56,138 @@ def _empty_to_none(value: str | None) -> str | None:
     return value or None
 
 
+class ProductCatalog:
+    """Märkte mit Kategorien und die Zuordnung aller bekannten Produkte (für alle Listen gemeinsam).
+
+    Die Zuordnung wird beim ersten Anlegen eines Produkts festgelegt und lässt sich später
+    ändern. Märkte und Kategorien selbst ändert der Admin-Modus der Seitenleiste.
+    """
+
+    def __init__(self, hass: HomeAssistant, db: Database) -> None:
+        self.hass = hass
+        self.db = db
+        # [{"key", "name", "categories": [{"key", "name"}]}] in Reihenfolge
+        self.markets: list[dict[str, Any]] = []
+        # name.casefold() -> {"name", "market", "category"}
+        self.products: dict[str, dict[str, Any]] = {}
+        self._listeners: list[Callable[[Any], None]] = []
+
+    async def async_load(self) -> None:
+        self.markets = await self.hass.async_add_executor_job(self.db.load_markets)
+        self.products = await self.hass.async_add_executor_job(self.db.load_products)
+
+    def get(self, name: str) -> dict[str, Any] | None:
+        return self.products.get(name.strip().casefold())
+
+    @staticmethod
+    def _find(entries: list[dict[str, Any]], value: str) -> dict[str, Any] | None:
+        value = value.strip().casefold()
+        return next(
+            (e for e in entries if value in (e["key"].casefold(), e["name"].casefold())), None
+        )
+
+    def resolve(
+        self, market: str | None, category: str | None, strict: bool = True
+    ) -> tuple[str, str | None] | None:
+        """Markt und Kategorie als Schlüssel; erlaubt sind Schlüssel oder Name.
+
+        Eine Kategorie allein bestimmt ihren Markt. None = keine Zuordnung angegeben.
+        Ohne `strict` wird Unbekanntes übergangen statt abgelehnt (offline gesammelte
+        Änderungen, deren Markt oder Kategorie inzwischen gelöscht wurde).
+        """
+        found = self._find(self.markets, market) if market else None
+        if market and found is None:
+            if strict:
+                raise ValueError(f"Unbekannter Markt: {market}")
+            return None
+        chosen = None
+        if category:
+            candidates = (
+                found["categories"]
+                if found
+                else [c for m in self.markets for c in m["categories"]]
+            )
+            chosen = self._find(candidates, category)
+            if chosen is None and strict:
+                raise ValueError(f"Unbekannte Kategorie: {category}")
+            if chosen is not None and found is None:
+                found = next(m for m in self.markets if chosen in m["categories"])
+        if found is None:
+            return None
+        return found["key"], chosen["key"] if chosen else None
+
+    async def async_assign(
+        self, name: str, market: str, category: str | None, source: Any = None
+    ) -> None:
+        """Ordnet ein Produkt einem Markt und ggf. einer Kategorie zu (Schlüssel aus resolve)."""
+        name = name.strip()
+        key = name.casefold()
+        product = {"name": name, "market": market, "category": category}
+        if self.products.get(key) == product:
+            return
+        self.products[key] = product
+        await self.hass.async_add_executor_job(self.db.save_product, key, product)
+        self._notify(source)
+
+    async def async_set_markets(self, markets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Admin-Modus: ersetzt alle Märkte und Kategorien (Neue ohne Schlüssel bekommen einen)."""
+        keys: set[str] = set()
+
+        def entry(raw: dict[str, Any], siblings: list[dict[str, Any]], kind: str) -> dict[str, Any]:
+            name = raw["name"].strip()
+            if not name:
+                raise ValueError(f"{kind} ohne Namen")
+            if any(e["name"].casefold() == name.casefold() for e in siblings):
+                raise ValueError(f"{kind} „{name}“ gibt es doppelt")
+            key = raw.get("key") or uuid4().hex[:12]
+            if key in keys:
+                raise ValueError(f"Schlüssel „{key}“ gibt es doppelt")
+            keys.add(key)
+            return {"key": key, "name": name}
+
+        cleaned: list[dict[str, Any]] = []
+        for raw in markets:
+            market = entry(raw, cleaned, "Markt")
+            market["categories"] = []
+            for raw_category in raw.get("categories", []):
+                market["categories"].append(
+                    entry(raw_category, market["categories"], "Kategorie")
+                )
+            cleaned.append(market)
+
+        await self.hass.async_add_executor_job(self.db.save_markets, cleaned)
+        # Neu laden: Zuordnungen zu gelöschten Märkten/Kategorien hat die Datenbank entfernt
+        await self.async_load()
+        self._notify(None)
+        return self.markets
+
+    def _notify(self, source: Any) -> None:
+        for listener in list(self._listeners):
+            listener(source)
+
+    @callback
+    def async_add_listener(self, listener: Callable[[Any], None]) -> Callable[[], None]:
+        """Listener bekommt die Liste, von der die Änderung kam."""
+        self._listeners.append(listener)
+
+        @callback
+        def remove() -> None:
+            if listener in self._listeners:
+                self._listeners.remove(listener)
+
+        return remove
+
+
 class ShoppingList:
     """Eine Einkaufsliste mit Speicherung und Änderungs-Benachrichtigung."""
 
-    def __init__(self, hass: HomeAssistant, db: Database, list_id: str) -> None:
+    def __init__(
+        self, hass: HomeAssistant, db: Database, catalog: ProductCatalog, list_id: str
+    ) -> None:
         self.hass = hass
         self.list_id = list_id
         self._db = db
+        self.catalog = catalog
         self._save_lock = asyncio.Lock()
         self.items: list[ShoppingItem] = []
         # Bekannte Artikel für Autovervollständigung: name.casefold() -> Infos
@@ -94,8 +219,17 @@ class ShoppingList:
             await self.hass.async_add_executor_job(
                 self._db.save, self.list_id, items, history
             )
+        self._notify()
+
+    def _notify(self) -> None:
         for listener in list(self._listeners):
             listener()
+
+    @callback
+    def async_catalog_changed(self, source: Any) -> None:
+        """Eine andere Liste hat Markt oder Kategorie eines Produkts geändert."""
+        if source is not self:
+            self._notify()
 
     @callback
     def async_add_listener(self, listener: Callable[[], None]) -> Callable[[], None]:
@@ -112,7 +246,12 @@ class ShoppingList:
         history = sorted(
             self.history.values(), key=lambda h: h.get("count", 0), reverse=True
         )
-        return {"items": [asdict(i) for i in self.items], "history": history}
+        return {
+            "items": [asdict(i) for i in self.items],
+            "history": history,
+            "products": list(self.catalog.products.values()),
+            "markets": self.catalog.markets,
+        }
 
     # ------------------------------------------------------------------ Suchen
 
@@ -156,14 +295,23 @@ class ShoppingList:
         merge: bool = True,
         item_id: str | None = None,
         added_by: str | None = None,
+        market: str | None = None,
+        category: str | None = None,
     ) -> ShoppingItem:
-        """Fügt einen Artikel hinzu oder erhöht die Menge eines vorhandenen."""
+        """Fügt einen Artikel hinzu oder erhöht die Menge eines vorhandenen.
+
+        Mit `market` und/oder `category` (Schlüssel oder Name) wird das Produkt im Katalog
+        zugeordnet.
+        """
+        assignment = self.catalog.resolve(market, category)
         name = name.strip()
         if parse and quantity is None:
             name, quantity, parsed_unit = parse_item(name)
             unit = unit or parsed_unit
         if not name:
             raise ValueError("Der Artikelname darf nicht leer sein")
+        if assignment is not None:
+            await self.catalog.async_assign(name, *assignment, source=self)
 
         known = self.history.get(name.casefold(), {})
         if quantity is not None and unit is None:
@@ -209,6 +357,10 @@ class ShoppingList:
 
     async def async_update(self, item_id: str, **changes: Any) -> ShoppingItem:
         item = self.get(item_id)
+        # Vor allen Änderungen prüfen, damit ein falscher Markt nichts halb ändert
+        assignment = self.catalog.resolve(
+            changes.pop("market", None), changes.pop("category", None)
+        )
         for key, value in changes.items():
             if key not in UPDATABLE_FIELDS:
                 continue
@@ -228,6 +380,8 @@ class ShoppingList:
             item.unit = None
         elif item.unit is None:
             item.unit = DEFAULT_UNIT
+        if assignment is not None:
+            await self.catalog.async_assign(item.name, *assignment, source=self)
         self._remember(item)
         await self._async_changed()
         return item
@@ -295,11 +449,20 @@ class ShoppingList:
     def _resolve(self, item_id: str) -> str:
         return self._id_map.get(item_id, item_id)
 
+    def _lenient_market(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Markt/Kategorie, die es inzwischen nicht mehr gibt, weglassen statt die Änderung zu verlieren."""
+        assignment = self.catalog.resolve(
+            data.get("market"), data.get("category"), strict=False
+        )
+        market, category = assignment or (None, None)
+        return {**data, "market": market, "category": category}
+
     async def _apply_op(self, op: dict[str, Any], user: str | None) -> None:
         kind = op["op"]
         if kind == "add":
             if any(i.id == op["id"] for i in self.items):
                 return
+            op = self._lenient_market(op)
             item = await self.async_add(
                 op["name"],
                 op.get("quantity"),
@@ -308,12 +471,15 @@ class ShoppingList:
                 parse=True,
                 item_id=op["id"],
                 added_by=user,
+                market=op.get("market"),
+                category=op.get("category"),
             )
             # Wurde der Artikel mit einem vorhandenen zusammengefasst, hat er dessen ID
             if item.id != op["id"]:
                 self._id_map[op["id"]] = item.id
         elif kind == "update":
-            await self.async_update(self._resolve(op["item_id"]), **op["changes"])
+            changes = self._lenient_market(op["changes"])
+            await self.async_update(self._resolve(op["item_id"]), **changes)
         elif kind == "remove":
             existing = {i.id for i in self.items}
             ids = [i for i in map(self._resolve, op["item_ids"]) if i in existing]
